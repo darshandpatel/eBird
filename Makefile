@@ -1,14 +1,12 @@
-INPUT_FILE="/Users/Darshan/Documents/MapReduce/Data/wikipedia-simple-html.bz2"
-HADOOP_ROOT="/usr/local/hadoop"
+INPUT_FILE="labeled.csv.bz2"
 
 default:clean
 	gradle build
-	cp ./build/libs/PageRank.jar .
+	cp ./build/libs/project.jar .
 
-# No combiner program run
 run:
-	${HADOOP_ROOT}/bin/hadoop jar PageRank.jar code.Run ${INPUT_FILE} output
+	hadoop jar project.jar ${INPUT_FILE} output
 
 # Clean the build
 clean:
-	rm -rf output .gradle PageRank.jar target build  
+	rm -rf output .gradle project.jar target build  
