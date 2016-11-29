@@ -1,4 +1,4 @@
-package eBird;
+package main;
 
 public class ModelTraining {
 
