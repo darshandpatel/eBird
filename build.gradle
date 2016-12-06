@@ -4,7 +4,7 @@ plugins {
 
 apply plugin: 'java'
 apply plugin: 'application'
-mainClassName = 'src.Bz2eBirdParser'
+mainClassName = 'main.Bz2eBirdParser'
 
 repositories {
     mavenCentral()
@@ -19,7 +19,7 @@ dependencies {
 sourceSets {
     main {
         java {
-            srcDir './src'
+            srcDir './src/main'
         }
     }
 }
@@ -28,7 +28,7 @@ jar {
     manifest {
         attributes(
             'Class-Path': configurations.compile.collect { it.getName() }.join(' '),
-            'Main-Class': 'eBird.Bz2eBirdParser'
+            'Main-Class': 'main.Bz2eBirdParser'
         )
     }
 }
