@@ -8,7 +8,7 @@ import sys
 class DataExploration:
 
     def __init__(self):
-        self.conf = SparkConf().setAppName("eBird")
+        self.conf = SparkConf()
         self.sc = SparkContext(conf=self.conf)
         self.models_broadcast = None
 
