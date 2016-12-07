@@ -1,21 +1,17 @@
-from pyspark import SparkConf, SparkContext
-from pyspark.sql import SQLContext
-from pyspark.mllib.linalg import Vectors
-from pyspark.mllib.stat import Statistics
-import numpy as np
-import math
 import random
-import csv
-from data_exploration import DataExploration
-
+import numpy as np
 class HandleMissing:
 
     rem_ids = []
+    target_index = 0
+
+    def __init__(self):
+        self.rem_ids = []
 
     @staticmethod
     def convert_target_into_numeric_value(values):
-        target_index = values[DataExploration.get_col_id("Agelaius_phoeniceus")]
         try:
+            target_index = HandleMissing.target_index
             value = values[target_index]
             if value == 'x':
                 values[target_index] = random.randint(2,10)
@@ -29,17 +25,17 @@ class HandleMissing:
 
     @staticmethod
     def convert_target_into_binary_value(values):
-        target_index = values[DataExploration.get_col_id("Agelaius_phoeniceus")]
-        value = values[target_index]
+        value = values[HandleMissing.target_index]
         if value == 0.0:
-            return 0.0
+            values[HandleMissing.target_index] = 0.0
         else:
-            return 1.0
+            values[HandleMissing.target_index] = 1.0
+        return values
 
     @staticmethod
     def convert_birds_into_numeric_value(values, birds_index):
         for index in birds_index:
-            if index != DataExploration.get_col_id("Agelaius_phoeniceus"):
+            if index != HandleMissing.target_index:
                 value = values[index]
                 try:
                     if value == 'x':
@@ -53,22 +49,26 @@ class HandleMissing:
         return values
 
     @staticmethod
-    def convert_remaining_into_numeric_value(values, birds_index):
+    def convert_remaining_into_numeric_value(values, birds_index, drop_index, dict):
         if len(HandleMissing.rem_ids) == 0:
             remaining_index = []
-            for ids in DataExploration.header_dict.values():
+            for ids in dict.values():
                 try:
                     remaining_index.extend(ids)
                 except TypeError:
                     remaining_index.append(ids)
+
+            temp_remaining_index = []
             for id in remaining_index:
-                if id in birds_index:
-                    remaining_index.remove(id)
-            HandleMissing.rem_ids = remaining_index
+                if id not in birds_index and id not in drop_index:
+                    temp_remaining_index.append(id)
+
+            HandleMissing.rem_ids = temp_remaining_index
+            HandleMissing.rem_ids.sort()
 
         for index in HandleMissing.rem_ids:
-            value = values[index]
             try:
+                value = values[index]
                 if value == 'x':
                     values[index] = float(random.randint(2,10))
                 elif value == '?':
@@ -80,16 +80,17 @@ class HandleMissing:
         return values
 
     @staticmethod
-    def convert_into_numeric_value(values):
+    def convert_into_numeric_value(values, dict, target_index, birds_index, drop_index):
+        HandleMissing.target_index = target_index
         tf_values = HandleMissing.convert_target_into_numeric_value(values)
         tfb_values = HandleMissing.convert_target_into_binary_value(tf_values)
-        bv_values = HandleMissing.convert_birds_into_numeric_value(tfb_values)
-        tv = HandleMissing.convert_remaining_into_numeric_value(bv_values)
+        bv_values = HandleMissing.convert_birds_into_numeric_value(tfb_values, birds_index)
+        tv = HandleMissing.convert_remaining_into_numeric_value(bv_values, birds_index, drop_index, dict)
         return tv
 
     @staticmethod
-    def get_target_value(values):
-        target_index = values[DataExploration.get_col_id("Agelaius_phoeniceus")]
+    def get_target_value(values, target_index):
+        target_index = target_index
         try:
             value = values[target_index]
             if value == 'x':
