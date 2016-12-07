@@ -11,7 +11,7 @@ from handle_missing_value import HandleMissing
 class DataExploration:
     header_dict = {}
     drop_list = ["SAMPLING_EVENT_ID", "LOC_ID", "DAY", "COUNTRY", "STATE_PROVINCE", "COUNTY", "COUNT_TYPE", "OBSERVER_ID",
-                 "ELEV_GT","ELEV_NED","GROUP_ID","BAILEY_ECOREGION", "OMERNIK_L3_ECOREGION","SUBNATIONAL2_CODE"]
+                 "ELEV_GT","ELEV_NED","GROUP_ID","BAILEY_ECOREGION", "OMERNIK_L3_ECOREGION","SUBNATIONAL2_CODE", "LATITUDE",        "LONGITUDE"]
     drop_multiples_list = ["NLCD", "CAUS_PREC0", "CAUS_PREC1", "CAUS_SNOW0", "CAUS_SNOW1", "CAUS_TEMP_AVG0", "CAUS_TEMP_AVG1"
                            , "CAUS_TEMP_MIN0", "CAUS_TEMP_MIN1", "CAUS_TEMP_MAX0", "CAUS_TEMP_MAX1"]
     protocol_list = ["P20", "P21", "P22", "P23", "P34", "P35", "P39", "P40", "P41", "P44", "P45", "P46", "P47", "P48",
@@ -395,6 +395,7 @@ if __name__ == "__main__":
     #rdd = dataExploration.read_sample_training("/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample/part-00000")
     rdd = dataExploration.read_sample_training("../sample/part-00000")
     srdd = rdd.filter(lambda x: DataExploration.filter_values_by_target_class(x)).map(lambda x: DataExploration.swap_target(x)).map(lambda x: DataExploration.custom_function(x))
+    print srdd.collect()[0]
     #srdd = rdd.flatMap(lambda x: DataExploration.custom_function(x))
     #DataExploration.calculate_corr(srdd)
 
