@@ -8,7 +8,7 @@ import sys
 class DataExploration:
 
     def __init__(self):
-        self.conf = SparkConf().setMaster("local").setAppName("eBird")
+        self.conf = SparkConf().setAppName("eBird")
         self.sc = SparkContext(conf=self.conf)
         self.models_broadcast = None
 
@@ -126,7 +126,7 @@ if __name__ == "__main__":
         #DataExploration.print_information(train)
         models = train.mapPartitions(DataExploration.apply_linear_regression)
         print models.count()
-        models.saveAsPickleFile("/Users/Darshan/Documents/MapReduce/FinalProject/models")
+        models.saveAsPickleFile(output_path)
         #modelsList = [model for model in models.toLocalIterator()]
         print models.collect()
     else:
