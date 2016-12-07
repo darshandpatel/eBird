@@ -260,7 +260,7 @@ class DataExploration:
                                                         birds_index= DataExploration.birds_column_ids,
                                                         drop_index= DataExploration.drop_column_ids)
         drca_ls = DataExploration.drop_columns(n_ls)
-        return n_ls
+        return drca_ls
         #return drca_ls
 
     @staticmethod
