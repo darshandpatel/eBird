@@ -82,9 +82,9 @@ class DataExploration:
             return x
         for val in DataExploration.protocol_list:
             if protocol == val:
-                x.append("1")
+                x.append(1.0)
             else:
-                x.append("0")
+                x.append(0.0)
         return x
 
     @staticmethod
@@ -93,21 +93,21 @@ class DataExploration:
         if time == -1:
             return x
         if 3 <= time <= 8:
-            x.append("1")
+            x.append(1.0)
         else:
-            x.append("0")
+            x.append(0.0)
         if 8 <= time <= 15:
-            x.append("1")
+            x.append(1.0)
         else:
-            x.append("0")
+            x.append(0.0)
         if 15 <= time <= 20:
-            x.append("1")
+            x.append(1.0)
         else:
-            x.append("0")
+            x.append(0.0)
         if time >= 20 or time <= 3:
-            x.append("1")
+            x.append(1.0)
         else:
-            x.append("0")
+            x.append(0.0)
         return x
 
     @staticmethod
@@ -118,7 +118,7 @@ class DataExploration:
             return x
         avg = (DataExploration.get_number(x[elev_gt_colID]) +
                DataExploration.get_number(x[elev_ned_colID]))*1.0/2
-        x.append(str(avg))
+        x.append(avg)
         return x
 
     @staticmethod
@@ -131,9 +131,9 @@ class DataExploration:
         x = R * math.cos(lat) * math.cos(lon)
         y = R * math.cos(lat) * math.sin(lon)
         z = R * math.sin(lat)
-        lx.append(str(x))
-        lx.append(str(y))
-        lx.append(str(z))
+        lx.append(x)
+        lx.append(y)
+        lx.append(z)
         return lx
 
     @staticmethod
@@ -395,7 +395,9 @@ if __name__ == "__main__":
     #rdd = dataExploration.read_sample_training("/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample/part-00000")
     rdd = dataExploration.read_sample_training("../sample/part-00000")
     srdd = rdd.filter(lambda x: DataExploration.filter_values_by_target_class(x)).map(lambda x: DataExploration.swap_target(x)).map(lambda x: DataExploration.custom_function(x))
-    print srdd.collect()[0]
+    slist = srdd.collect()
+    print slist[0]
+    print slist[1]
     #srdd = rdd.flatMap(lambda x: DataExploration.custom_function(x))
     #DataExploration.calculate_corr(srdd)
 
