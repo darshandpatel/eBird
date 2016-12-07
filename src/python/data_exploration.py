@@ -6,7 +6,8 @@ class DataExploration:
     header_dict = {}
     drop_list = ["SAMPLING_EVENT_ID", "LOC_ID", "DAY", "COUNTRY", "STATE_PROVINCE", "COUNTY", "COUNT_TYPE", "OBSERVER_ID",
                  "ELEV_GT","ELEV_NED","GROUP_ID","BAILEY_ECOREGION", "OMERNIK_L3_ECOREGION","SUBNATIONAL2_CODE"]
-    drop_multiples_list = ["NLCD"]
+    drop_multiples_list = ["NLCD", "CAUS_PREC0", "CAUS_PREC1", "CAUS_SNOW0", "CAUS_SNOW1", "CAUS_TEMP_AVG0", "CAUS_TEMP_AVG1"
+                           , "CAUS_TEMP_MIN0", "CAUS_TEMP_MIN1", "CAUS_TEMP_MAX0", "CAUS_TEMP_MAX1"]
     protocol_list = ["P20", "P21", "P22", "P23", "P34", "P35", "P39", "P40", "P41", "P44", "P45", "P46", "P47", "P48", "P49", "P50", "P51", "P52", "P55", "P56"]
 
     def __init__(self):
@@ -119,6 +120,48 @@ class DataExploration:
         return yx
 
     @staticmethod
+    def replace_caus(x):
+        prec_cid = DataExploration.header_dict["CAUS_PREC"]
+        snow_cid = DataExploration.header_dict["CAUS_SNOW"]
+        tavg_cid = DataExploration.header_dict["CAUS_TEMP_AVG"]
+        tmin_cid = DataExploration.header_dict["CAUS_TEMP_MIN"]
+        tmax_cid = DataExploration.header_dict["CAUS_TEMP_MAX"]
+        month = int(max(1.0,DataExploration.get_number(DataExploration.header_dict["MONTH"])))
+
+        if len(str(month)) == 1:
+            mm = "0"+str(month)
+        else:
+            mm = str(month)
+
+        precmm_cid = DataExploration.header_dict["CAUS_PREC"+mm]
+        try:
+            snowmm_cid = DataExploration.header_dict["CAUS_SNOW"+mm]
+            snowmm = x[snowmm_cid]
+        except KeyError:
+            snowmm = 0
+        tavgmm_cid = DataExploration.header_dict["CAUS_TEMP_AVG"+mm]
+        tminmm_cid = DataExploration.header_dict["CAUS_TEMP_MIN"+mm]
+        tmaxmm_cid = DataExploration.header_dict["CAUS_TEMP_MAX"+mm]
+
+        if x[prec_cid] == "?":
+            x[prec_cid] = x[precmm_cid]
+        if x[snow_cid] == "?":
+            x[snow_cid] = snowmm
+        if x[tavg_cid] == "?":
+            x[tavg_cid] = x[tavgmm_cid]
+        if x[tmin_cid] == "?":
+            x[tmin_cid] = x[tminmm_cid]
+        if x[tmax_cid] == "?":
+            x[tmax_cid] = x[tmaxmm_cid]
+        cx = x
+        return cx
+
+    @staticmethod
+    def replace_columns(x):
+        cx = DataExploration.replace_caus(x)
+        return cx
+
+    @staticmethod
     def drop_columns(x):
         col_list = []
         for col in DataExploration.drop_list:
@@ -142,10 +185,12 @@ class DataExploration:
     @staticmethod
     def custom_function(x):
         ls = x.split(",")
-        als = DataExploration.add_columns(ls)
-        acls = DataExploration.convert_columns(als)
-        dacls = DataExploration.drop_columns(acls)
-        return dacls
+        a_ls = DataExploration.add_columns(ls)
+        ca_ls = DataExploration.convert_columns(a_ls)
+        rca_ls = DataExploration.replace_columns(ca_ls)
+        #rca_ls = ca_ls
+        drca_ls = DataExploration.drop_columns(rca_ls)
+        return drca_ls
 
     @staticmethod
     def create_header(headers):
@@ -167,7 +212,15 @@ class DataExploration:
 
     @staticmethod
     def print_information(irdd):
-        print irdd.take(1)
+        #plist = irdd.take(1)
+        #print plist
+        irdd.toDF().show(10)
+        '''
+        for l in plist:
+            for val in l:
+                print l
+            print "\n"
+        '''
 
 if __name__ == "__main__":
 
