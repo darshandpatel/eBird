@@ -24,6 +24,8 @@ class DataExploration:
     birds_column_ids = None
     drop_column_ids = []
     target_ID = 0
+    mean = []
+    variance = []
 
     def __init__(self):
         self.conf = SparkConf()
@@ -265,8 +267,22 @@ class DataExploration:
                                                         drop_index= DataExploration.drop_column_ids)
         drca_ls = DataExploration.drop_columns(n_ls)
         return drca_ls
-        #return drca_ls
 
+    @staticmethod
+    def set_mean(m):
+        DataExploration.mean = m
+
+    @staticmethod
+    def set_variance(v):
+        DataExploration.variance = v
+
+    @staticmethod
+    def normalize(record):
+        for i in range(0,len(record)-28):
+            if variance[i] != 0.0:
+                record[i] = (record[i] - DataExploration.mean[i])/math.sqrt(DataExploration.variance[i])
+        return record
+ 
     @staticmethod
     def create_header(headers):
         DataExploration.header_dict = DataExploration.create_header_dict(headers)
@@ -808,15 +824,15 @@ if __name__ == "__main__":
     DataExploration.cal_birds_column_ids()
     DataExploration.cal_drop_column_ids()
 
-    full_dataset = dataExploration.read_sample_training("/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample").persist()
+    #full_dataset = dataExploration.read_sample_training("../sample").persist()
 
     #DataExploration.create_header(full_dataset.first().split(','))
     #DataExploration.cal_birds_column_ids()
     #DataExploration.cal_drop_column_ids()
 
-    (train_rdd, val_rdd) = full_dataset.randomSplit([0.8, 0.2], 123)
-    #train_rdd = dataExploration.read_sample_training("/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample/part-00000")
 
+    #(train_rdd, val_rdd) = full_dataset.randomSplit([0.8, 0.2], 123)
+    '''
     processed_train_rdd = train_rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)).\
         map(lambda x: DataExploration.swap_target(x)). \
         filter(lambda x : ModelTraining.handle_class_imbalance(x)).\
@@ -827,10 +843,10 @@ if __name__ == "__main__":
     #DataExploration.calculate_corr(srdd)
 
     model = ModelTraining.train_logistic_regression(processed_train_rdd,)
-    model.save(dataExploration.sc, "/Users/Darshan/Documents/MapReduce/FinalProject/Model")
+    model.save(dataExploration.sc, "../Model")
 
     logistic_model = LogisticRegressionModel.load(dataExploration.sc,
-                                             "/Users/Darshan/Documents/MapReduce/FinalProject/Model")
+                                             "../Model")
 
     #val_rdd = dataExploration.read_sample_training(
     #    "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample/part-00001")
@@ -842,7 +858,7 @@ if __name__ == "__main__":
 
     ml_model = dataExploration.sc.broadcast(logistic_model)
     predictions = processed_val_rdd.map(lambda x : ""+x[0]+","+str(x[1][0])+","+str(ml_model.value.predict(x[1][1:])))
-    predictions.saveAsTextFile("/Users/Darshan/Documents/MapReduce/FinalProject/Prediction")
+    predictions.saveAsTextFile("../Prediction")
     #print predictions.collect()
 
     ModelTraining.cal_accuracy(dataExploration.sc, predictions)
@@ -859,3 +875,16 @@ if __name__ == "__main__":
     #dataExploration.test_custom_map(rdd)
     #dataExploration.print_information(rdd)
     #DataExploration.target_analysis(dataExploration.sc, rdd)
+    '''
+    rdd = dataExploration.read_sample_training("../sample/part-00000")
+    srdd = rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)).\
+        map(lambda x: DataExploration.swap_target(x)).map(lambda x: DataExploration.custom_function(x))
+    print srdd.collect()[0]
+    summary = Statistics.colStats(srdd)
+    mean = summary.mean()
+    variance = summary.variance()
+    print mean[1], "--", variance[1]
+    DataExploration.set_mean(mean)
+    DataExploration.set_variance(variance)
+    mrdd = srdd.map(lambda x: DataExploration.normalize(x))
+    print mrdd.collect()[0]
