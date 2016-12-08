@@ -12,7 +12,9 @@ import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream;
 public class Bz2eBirdParser {
 
 	public static void main(String[] args) {
-		if (args.length != 1) {
+		
+		System.out.println(args.length);
+		if (args.length < 2) {
 			System.out.println("Input bz2 file required on command line.");
 			System.exit(1);
 		}
@@ -29,12 +31,25 @@ public class Bz2eBirdParser {
 			reader = new BufferedReader(new InputStreamReader(inputStream));
 			String line;
 			Random rand = new Random();
+			int lineCounter = 1;
+			long totalNumberOfRecords = 0;
 			while ((line = reader.readLine()) != null) {
-				String[] ls = line.split("");
-				int p = rand.nextInt(10000)+1;
-				if(p == 10)
-					System.out.println("SSSS"+line+"SSSS");				
+				//String[] ls = line.split("");
+				totalNumberOfRecords++;
+				/*
+				int p = rand.nextInt(10000);
+				if(lineCounter == 1)
+					System.out.println("First Line : "+line);
+				else if(p == 0){
+					System.out.println("Second Line :" + line);
+					System.out.println("------------------------------");
+					System.out.println("------------------------------");
+					System.out.println("------------------------------");
+				}
+				*/
+				lineCounter++;
 			}
+			System.out.println("Total number of records :" + totalNumberOfRecords);
 
 		} catch (Exception e) {
 			e.printStackTrace();
