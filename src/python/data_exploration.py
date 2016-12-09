@@ -11,7 +11,8 @@ from model_training import ModelTraining
 from pyspark.mllib.classification import LogisticRegressionWithLBFGS, LogisticRegressionModel
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
 import sys
-
+from pyspark.mllib.regression import LabeledPoint
+from pyspark.mllib.linalg import SparseVector
 
 class DataExploration:
     header_dict = {}
@@ -258,6 +259,22 @@ class DataExploration:
         return ls
 
     @staticmethod
+    def make_sparse_vector(drca_ls):
+        index_array = []
+        value_array = []
+        index = 0
+        for val in drca_ls:
+            if index == 0:
+                index += 1
+                continue
+            if val != 0:
+                index_array.append(index)
+                value_array.append(drca_ls[index])
+            index+=1
+        sparse_vector = LabeledPoint(drca_ls[0], SparseVector(index, index_array, value_array))
+        return sparse_vector
+
+    @staticmethod
     def custom_function(ls):
         a_ls = DataExploration.add_columns(ls)
         ca_ls = DataExploration.convert_columns(a_ls)
@@ -268,7 +285,8 @@ class DataExploration:
                                                         birds_index= DataExploration.birds_column_ids,
                                                         drop_index= DataExploration.drop_column_ids)
         drca_ls = DataExploration.drop_columns(n_ls)
-        return drca_ls
+        sparse_vector = DataExploration.make_sparse_vector(drca_ls)
+        return sparse_vector
 
     @staticmethod
     def set_mean(m):
@@ -411,9 +429,14 @@ class DataExploration:
 
         return duplication
 
+    def sparse_test(self, srdd):
+        sprdd = srdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x))\
+            .map(lambda x: DataExploration.swap_target(x)).\
+            map(lambda x: DataExploration.custom_function(x))
+        print sprdd.collect()[0]
+
     @staticmethod
     def train_ml_models(full_data):
-
         full_data
 
 
@@ -424,12 +447,12 @@ if __name__ == "__main__":
     input_path = "C:\Users\SPS\Documents\eBirdData\\training.bz2"
     output_path = "../sample"
     dataExploration.split_input_data(input_path=input_path, output_path=output_path)
-    '''
     args = sys.argv
     input_path = args[1] # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     val_path = args[2]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     model_path = args[3] # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
     prediction_path = args[4] # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
+    '''
 
     DataExploration.create_header(
         [u'SAMPLING_EVENT_ID', u'LOC_ID', u'LATITUDE', u'LONGITUDE', u'YEAR', u'MONTH', u'DAY', u'TIME', u'COUNTRY',
@@ -844,7 +867,10 @@ if __name__ == "__main__":
 
     DataExploration.cal_birds_column_ids()
     DataExploration.cal_drop_column_ids()
+    sampleDS = dataExploration.read_sample_training("../sample/part-00000").persist()
+    dataExploration.sparse_test(sampleDS)
 
+    '''
     full_dataset = dataExploration.read_sample_training(input_path).persist()
 
     #DataExploration.create_header(full_dataset.first().split(','))
@@ -902,6 +928,7 @@ if __name__ == "__main__":
     #dataExploration.test_custom_map(rdd)
     #dataExploration.print_information(rdd)
     #DataExploration.target_analysis(dataExploration.sc, rdd)
+    '''
     '''
     rdd = dataExploration.read_sample_training("../sample/part-00000")
     srdd = rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)).\
