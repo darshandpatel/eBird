@@ -16,7 +16,7 @@ from pyspark.mllib.linalg import SparseVector
 
 class DataExploration:
     header_dict = {}
-    drop_list = ["SAMPLING_EVENT_ID", "LOC_ID", "DAY", "COUNTRY", "STATE_PROVINCE", "COUNTY", "COUNT_TYPE", "OBSERVER_ID",
+    drop_list = ["SAMPLING_EVENT_ID", "LOC_ID", "YEAR", "DAY", "COUNTRY", "STATE_PROVINCE", "COUNTY", "COUNT_TYPE", "OBSERVER_ID",
                  "ELEV_GT","ELEV_NED","GROUP_ID","BAILEY_ECOREGION", "OMERNIK_L3_ECOREGION","SUBNATIONAL2_CODE", "LATITUDE", "LONGITUDE"]
     drop_multiples_list = ["NLCD", "CAUS_PREC0", "CAUS_PREC1", "CAUS_SNOW0", "CAUS_SNOW1", "CAUS_TEMP_AVG0", "CAUS_TEMP_AVG1"
                            , "CAUS_TEMP_MIN0", "CAUS_TEMP_MIN1", "CAUS_TEMP_MAX0", "CAUS_TEMP_MAX1"]
@@ -153,22 +153,6 @@ class DataExploration:
         return ptelx
 
     @staticmethod
-    def convert_year(x):
-        year = DataExploration.get_col_id("YEAR")
-        if year == -1:
-            return x
-        if DataExploration.get_number(x[year]) % 2 == 0:
-            x[year] = "0"
-        else:
-            x[year] = "1"
-        return x
-
-    @staticmethod
-    def convert_columns(ls):
-        yx = DataExploration.convert_year(ls)
-        return yx
-
-    @staticmethod
     def replace_caus(x):
         prec_cid = DataExploration.header_dict["CAUS_PREC"]
         snow_cid = DataExploration.header_dict["CAUS_SNOW"]
@@ -275,10 +259,27 @@ class DataExploration:
         return sparse_vector
 
     @staticmethod
+    def catagories(x):
+        list = []
+        pair = ((DataExploration.get_col_id("BAILEY_ECOREGION"), x[DataExploration.get_col_id("BAILEY_ECOREGION")]), 1)
+        list.append(pair)
+        pair = ((DataExploration.get_col_id("OMERNIK_L3_ECOREGION"), x[DataExploration.get_col_id("OMERNIK_L3_ECOREGION")]), 1)
+        list.append(pair)
+        pair = ((DataExploration.get_col_id("BCR"), x[DataExploration.get_col_id("BCR")]), 1)
+        list.append(pair)
+        pair = ((DataExploration.get_col_id("YEAR"), x[DataExploration.get_col_id("YEAR")]), 1)
+        list.append(pair)
+        return list
+
+    @staticmethod
+    def find_catagories(rdd):
+        print rdd.map(lambda x: x.split(",")).flatMap(lambda x: DataExploration.catagories(x)).groupByKey().keys().collect()
+
+
+    @staticmethod
     def custom_function(ls):
         a_ls = DataExploration.add_columns(ls)
-        ca_ls = DataExploration.convert_columns(a_ls)
-        rca_ls = DataExploration.replace_columns(ca_ls)
+        rca_ls = DataExploration.replace_columns(a_ls)
         n_ls = HandleMissing.convert_into_numeric_value(rca_ls,
                                                         dict= DataExploration.header_dict,
                                                         target_index=DataExploration.get_col_id("Agelaius_phoeniceus"),
@@ -880,8 +881,9 @@ if __name__ == "__main__":
 
     DataExploration.cal_birds_column_ids()
     DataExploration.cal_drop_column_ids()
-    sampleDS = dataExploration.read_sample_training("../sample/part-00000").persist()
-    dataExploration.sparse_test(sampleDS)
+    sampleDS = dataExploration.read_sample_training("../sample/").persist()
+    #dataExploration.sparse_test(sampleDS)
+    dataExploration.find_catagories(sampleDS)
 
     full_data_set = dataExploration.read_sample_training(input_path).persist()
 
