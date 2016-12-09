@@ -266,9 +266,9 @@ class DataExploration:
                                                         dict=DataExploration.header_dict,
                                                         target_index=DataExploration.get_col_id("Agelaius_phoeniceus"),
                                                         birds_index=DataExploration.birds_column_ids,
-                                                        drop_index=DataExploration.drop_column_ids)
-        drca_ls = DataExploration.drop_columns(n_ls)
-        return drca_ls
+                                                        drop_index=[])
+        #drca_ls = DataExploration.drop_columns(n_ls)
+        return n_ls
 
     @staticmethod
     def set_mean(m):
@@ -517,22 +517,18 @@ class ModelTraining:
     def random_sampling_by_target(values):
         try:
             if values[0] == 'x':
-                random_value = random.randint(1, 20)
+                random_value = random.randint(1, 2)
                 if random_value == 1:
-                    return False
-                return True
+                    return True
             elif values[0] == '0':
-                random_value = random.randint(1, 10)
+                random_value = random.randint(1, 3)
                 # Half the data
                 if random_value == 2:
-                    return False
-                else:
                     return True
             elif values[0] == '?':
-                if random.randint(0, 1) == 1:
+                if random.randint(1, 3) == 1:
                     return True
-            else:
-                return True
+            return False
         except:
             return False
 
@@ -541,9 +537,7 @@ if __name__ == "__main__":
     dataExploration = DataExploration()
     args = sys.argv
     input_path = args[1]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
-    val_path = args[2]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
-    model_path = args[3]  # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
-    prediction_path = args[4]  # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
+    output_path = args[2]
 
     DataExploration.create_header(
         [u'SAMPLING_EVENT_ID', u'LOC_ID', u'LATITUDE', u'LONGITUDE', u'YEAR', u'MONTH', u'DAY', u'TIME', u'COUNTRY',
@@ -965,7 +959,9 @@ if __name__ == "__main__":
         map(lambda x: DataExploration.swap_target(x)). \
         filter(lambda x: ModelTraining.random_sampling_by_target(x)). \
         map(lambda x: DataExploration.custom_function(x))
-
-    print(Statistics.corr(processed_train_rdd, method="pearson"))
+    print processed_train_rdd.first()
+    cor_matrix = Statistics.corr(processed_train_rdd, method="pearson")
+    print(type(cor_matrix))
+    np.save(output_path, cor_matrix)
 
 

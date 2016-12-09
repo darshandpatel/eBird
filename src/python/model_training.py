@@ -68,9 +68,8 @@ class ModelTraining:
 
     @staticmethod
     def train_logistic_regression(train_rdd):
-        parsed_train_rdd = train_rdd.map(ModelTraining.parse_input)
         # Build Model
-        model = LogisticRegressionWithLBFGS.train(parsed_train_rdd, regParam=0.005, regType='l1')
+        model = LogisticRegressionWithLBFGS.train(train_rdd, regParam=0.005, regType='l1')
         return model
 
     @staticmethod

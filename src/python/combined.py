@@ -267,7 +267,8 @@ class DataExploration:
                                                         birds_index=DataExploration.birds_column_ids,
                                                         drop_index=DataExploration.drop_column_ids)
         drca_ls = DataExploration.drop_columns(n_ls)
-        return drca_ls
+        return LabeledPoint(drca_ls[0], drca_ls[1:])
+        #return drca_ls
 
     @staticmethod
     def set_mean(m):
@@ -1050,7 +1051,7 @@ if __name__ == "__main__":
         lambda x: "" + x[0] + "," + str(x[1][0]) + "," + str(ml_model.value.predict(x[1][1:])))
     predictions.saveAsTextFile(prediction_path)
 
-    # print predictions.collect()
+    print predictions.collect()
 
     ModelTraining.cal_accuracy(dataExploration.sc, predictions)
 

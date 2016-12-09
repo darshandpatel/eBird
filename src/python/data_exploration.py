@@ -302,7 +302,7 @@ class DataExploration:
             if variance[i] != 0.0:
                 record[i] = (record[i] - DataExploration.mean[i])/math.sqrt(DataExploration.variance[i])
         return record
- 
+
     @staticmethod
     def create_header(headers):
         DataExploration.header_dict = DataExploration.create_header_dict(headers)
@@ -422,11 +422,9 @@ class DataExploration:
 
     @staticmethod
     def replicate_data(value, nbr_of_models):
-
         duplication = []
         for i in range(nbr_of_models.value):
             duplication.append((i, value))
-
         return duplication
 
     def sparse_test(self, srdd):
@@ -436,23 +434,38 @@ class DataExploration:
         print sprdd.collect()[0]
 
     @staticmethod
-    def train_ml_models(full_data):
-        full_data
+    def train_model(train_data):
+        #list(train_data)
+        return iter(ModelTraining.train_logistic_regression(list(train_data)))
+        #return [1]
+
+    def perform_distributed_random_forest(self, train_rdd):
+
+        processed_train_rdd = (train_rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)). \
+                               map(lambda x: DataExploration.swap_target(x)). \
+                               filter(lambda x: ModelTraining.handle_class_imbalance(x)). \
+                               map(lambda x: DataExploration.custom_function(x)))
+
+        print "Actual Count : " + str(processed_train_rdd.count())
+        nbr_of_models = self.sc.broadcast(2)
+        replicated_train_rdd = processed_train_rdd.flatMap(lambda x: DataExploration.replicate_data(x, nbr_of_models))
+        print "Replicated Count : " + str(replicated_train_rdd.count())
+        trained_group_by = replicated_train_rdd.groupByKey()
+        print "Map Values Count : " + str(trained_group_by.mapValues(DataExploration.train_model).count())
+        print "trained_group_by : " + str(trained_group_by.keys().count())
+
 
 
 if __name__ == "__main__":
 
     dataExploration = DataExploration()
-    '''
-    input_path = "C:\Users\SPS\Documents\eBirdData\\training.bz2"
-    output_path = "../sample"
-    dataExploration.split_input_data(input_path=input_path, output_path=output_path)
+
     args = sys.argv
     input_path = args[1] # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     val_path = args[2]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     model_path = args[3] # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
     prediction_path = args[4] # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
-    '''
+
 
     DataExploration.create_header(
         [u'SAMPLING_EVENT_ID', u'LOC_ID', u'LATITUDE', u'LONGITUDE', u'YEAR', u'MONTH', u'DAY', u'TIME', u'COUNTRY',
@@ -870,76 +883,7 @@ if __name__ == "__main__":
     sampleDS = dataExploration.read_sample_training("../sample/part-00000").persist()
     dataExploration.sparse_test(sampleDS)
 
-    '''
-    full_dataset = dataExploration.read_sample_training(input_path).persist()
+    full_data_set = dataExploration.read_sample_training(input_path).persist()
 
-    #DataExploration.create_header(full_dataset.first().split(','))
-    #DataExploration.cal_birds_column_ids()
-    #DataExploration.cal_drop_column_ids()
-
-    (train_rdd, val_rdd) = full_dataset.randomSplit([0.8, 0.2], 345)
-    #train_rdd = dataExploration.read_sample_training("/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample/part-00000")
-    val_rdd.saveAsTextFile(val_path)
-
-    # Two models
-    nbr_of_models = dataExploration.sc.broadcast(2)
-
-    processed_train_rdd = (train_rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)). \
-                           map(lambda x: DataExploration.swap_target(x)). \
-                           filter(lambda x: ModelTraining.handle_class_imbalance(x)). \
-                           map(lambda x: DataExploration.custom_function(x))
-                           .flatMap(lambda x : DataExploration.replicate_data(x, nbr_of_models)))
-    processed_train_rdd.groupByKey().mapPartitions()
-    print "Count is : "+ str(processed_train_rdd.count())
-    #srdd = rdd.flatMap(lambda x: DataExploration.custom_function(x))
-    #DataExploration.calculate_corr(srdd)
-
-    model = ModelTraining.train_logistic_regression(processed_train_rdd,)
-    model.save(dataExploration.sc, model_path)
-
-    logistic_model = LogisticRegressionModel.load(dataExploration.sc, model_path)
-
-    #val_rdd = dataExploration.read_sample_training(
-    #    "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample/part-00001")
-
-    processed_val_rdd = val_rdd.filter(lambda x: DataExploration.filter_header(x)). \
-        map(lambda x: DataExploration.swap_target(x)). \
-        map(lambda x: (x[DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]], DataExploration.custom_function(x)))
-    #print processed_val_rdd.collect()[0]
-
-    ml_model = dataExploration.sc.broadcast(logistic_model)
-
-    predictions = processed_val_rdd.map(lambda x: ""+x[0]+","+str(x[1][0])+","+str(ml_model.value.predict(x[1][1:])))
-    predictions.saveAsTextFile(prediction_path)
-
-    #print predictions.collect()
-
-    ModelTraining.cal_accuracy(dataExploration.sc, predictions)
-
-    #evaluator = BinaryClassificationEvaluator()
-    #auroc = evaluator.evaluate(predictions, {evaluator.metricName: "areaUnderROC"})
-
-    #rdd = dataExploration.read_sample_training("/Users/Darshan/Documents/MapReduce/FinalProject/labeled.csv.bz2")
-    #first_row = dataExploration.sc.parallelize(rdd.first())
-    #rdd = rdd.subtract(first_row)
-    #srdd = rdd.map(lambda x: DataExploration.custom_function(x))
-
-    #DataExploration.print_information(srdd)
-    #dataExploration.test_custom_map(rdd)
-    #dataExploration.print_information(rdd)
-    #DataExploration.target_analysis(dataExploration.sc, rdd)
-    '''
-    '''
-    rdd = dataExploration.read_sample_training("../sample/part-00000")
-    srdd = rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)).\
-        map(lambda x: DataExploration.swap_target(x)).map(lambda x: DataExploration.custom_function(x))
-    print srdd.collect()[0]
-    summary = Statistics.colStats(srdd)
-    mean = summary.mean()
-    variance = summary.variance()
-    print mean[1], "--", variance[1]
-    DataExploration.set_mean(mean)
-    DataExploration.set_variance(variance)
-    mrdd = srdd.map(lambda x: DataExploration.normalize(x))
-    print mrdd.collect()[0]
-    '''
+    (train_rdd, val_rdd) = full_data_set.randomSplit([0.8, 0.2], 345)
+    dataExploration.perform_distributed_random_forest(train_rdd)
