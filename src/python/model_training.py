@@ -2,17 +2,11 @@ import random
 from pyspark.mllib.classification import LogisticRegressionWithLBFGS, LogisticRegressionModel
 from pyspark.mllib.regression import LabeledPoint
 from pyspark import SparkConf, SparkContext
+import sys
+from pyspark.mllib.tree import RandomForest, RandomForestModel
 
 
 class ModelTraining:
-
-    @staticmethod
-    def train_logistic_regression(train_rdd):
-        balanced_train_rdd = train_rdd.filter(ModelTraining.handle_class_imbalance)
-        parsed_train_rdd = balanced_train_rdd.map(ModelTraining.parse_input)
-        # Build Model
-        model = LogisticRegressionWithLBFGS.train(parsed_train_rdd, regParam=0.005, regType='l1')
-        return model
 
     @staticmethod
     def handle_class_imbalance(values):
@@ -72,12 +66,30 @@ class ModelTraining:
             else:
                 false_neg.add(1)
 
+    @staticmethod
+    def train_logistic_regression(train_rdd):
+        parsed_train_rdd = train_rdd.map(ModelTraining.parse_input)
+        # Build Model
+        model = LogisticRegressionWithLBFGS.train(parsed_train_rdd, regParam=0.005, regType='l1')
+        return model
+
+    @staticmethod
+    def train_random_forest(train_rdd):
+        parsed_train_rdd = train_rdd.map(ModelTraining.parse_input)
+        model = RandomForest.trainClassifier(parsed_train_rdd, numClasses=2, categoricalFeaturesInfo={},
+                                             numTrees=8, featureSubsetStrategy="auto",
+                                             impurity='gini', maxDepth=15, maxBins=32)
+        return model
+
 if __name__ == "__main__":
 
-    conf = SparkConf().setMaster("local").setAppName("eBird")
+    args = sys.argv
+    input_path = args[1]
+    conf = SparkConf()
     sc = SparkContext(conf=conf)
-    prediction_rdd = sc.textFile("/Users/Darshan/Documents/MapReduce/FinalProject/Prediction")
+    prediction_rdd = sc.textFile(input_path)
     ModelTraining.cal_accuracy(sc, prediction_rdd)
+
     '''
     processed_train_rdd = train_rdd.filter(lambda x: DataExploration.filter_values_by_target_class(x)).map(
         lambda x: DataExploration.swap_target(x)).map(lambda x: DataExploration.custom_function(x))

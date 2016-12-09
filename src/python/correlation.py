@@ -6,19 +6,19 @@ import numpy as np
 import math
 import random
 import csv
-from handle_missing_value import HandleMissing
-from model_training import ModelTraining
-from pyspark.mllib.classification import LogisticRegressionWithLBFGS, LogisticRegressionModel
-from pyspark.ml.evaluation import BinaryClassificationEvaluator
 import sys
 
 
 class DataExploration:
+
     header_dict = {}
-    drop_list = ["SAMPLING_EVENT_ID", "LOC_ID", "DAY", "COUNTRY", "STATE_PROVINCE", "COUNTY", "COUNT_TYPE", "OBSERVER_ID",
-                 "ELEV_GT","ELEV_NED","GROUP_ID","BAILEY_ECOREGION", "OMERNIK_L3_ECOREGION","SUBNATIONAL2_CODE", "LATITUDE", "LONGITUDE"]
-    drop_multiples_list = ["NLCD", "CAUS_PREC0", "CAUS_PREC1", "CAUS_SNOW0", "CAUS_SNOW1", "CAUS_TEMP_AVG0", "CAUS_TEMP_AVG1"
-                           , "CAUS_TEMP_MIN0", "CAUS_TEMP_MIN1", "CAUS_TEMP_MAX0", "CAUS_TEMP_MAX1"]
+    drop_list = ["SAMPLING_EVENT_ID", "LOC_ID", "DAY", "COUNTRY", "STATE_PROVINCE", "COUNTY", "COUNT_TYPE",
+                 "OBSERVER_ID",
+                 "ELEV_GT", "ELEV_NED", "GROUP_ID", "BAILEY_ECOREGION", "OMERNIK_L3_ECOREGION", "SUBNATIONAL2_CODE",
+                 "LATITUDE", "LONGITUDE"]
+    drop_multiples_list = ["NLCD", "CAUS_PREC0", "CAUS_PREC1", "CAUS_SNOW0", "CAUS_SNOW1", "CAUS_TEMP_AVG0",
+                           "CAUS_TEMP_AVG1"
+        , "CAUS_TEMP_MIN0", "CAUS_TEMP_MIN1", "CAUS_TEMP_MAX0", "CAUS_TEMP_MAX1"]
     protocol_list = ["P20", "P21", "P22", "P23", "P34", "P35", "P39", "P40", "P41", "P44", "P45", "P46", "P47", "P48",
                      "P49", "P50", "P51", "P52", "P55", "P56"]
     birds_column_ids = None
@@ -39,7 +39,7 @@ class DataExploration:
             s = float(n)
             return s
         except ValueError:
-            #print "Value error in get number:"+n
+            # print "Value error in get number:"+n
             return 0
 
     @staticmethod
@@ -124,7 +124,7 @@ class DataExploration:
         if elev_gt_colID == -1 or elev_ned_colID == -1:
             return x
         avg = (DataExploration.get_number(x[elev_gt_colID]) +
-               DataExploration.get_number(x[elev_ned_colID]))*1.0/2
+               DataExploration.get_number(x[elev_ned_colID])) * 1.0 / 2
         x.append(avg)
         return x
 
@@ -174,22 +174,22 @@ class DataExploration:
         tavg_cid = DataExploration.header_dict["CAUS_TEMP_AVG"]
         tmin_cid = DataExploration.header_dict["CAUS_TEMP_MIN"]
         tmax_cid = DataExploration.header_dict["CAUS_TEMP_MAX"]
-        month = int(max(1.0,DataExploration.get_number(DataExploration.header_dict["MONTH"])))
+        month = int(max(1.0, DataExploration.get_number(DataExploration.header_dict["MONTH"])))
 
         if len(str(month)) == 1:
-            mm = "0"+str(month)
+            mm = "0" + str(month)
         else:
             mm = str(month)
 
-        precmm_cid = DataExploration.header_dict["CAUS_PREC"+mm]
+        precmm_cid = DataExploration.header_dict["CAUS_PREC" + mm]
         try:
-            snowmm_cid = DataExploration.header_dict["CAUS_SNOW"+mm]
+            snowmm_cid = DataExploration.header_dict["CAUS_SNOW" + mm]
             snowmm = x[snowmm_cid]
         except KeyError:
             snowmm = 0
-        tavgmm_cid = DataExploration.header_dict["CAUS_TEMP_AVG"+mm]
-        tminmm_cid = DataExploration.header_dict["CAUS_TEMP_MIN"+mm]
-        tmaxmm_cid = DataExploration.header_dict["CAUS_TEMP_MAX"+mm]
+        tavgmm_cid = DataExploration.header_dict["CAUS_TEMP_AVG" + mm]
+        tminmm_cid = DataExploration.header_dict["CAUS_TEMP_MIN" + mm]
+        tmaxmm_cid = DataExploration.header_dict["CAUS_TEMP_MAX" + mm]
 
         if x[prec_cid] == "?":
             x[prec_cid] = x[precmm_cid]
@@ -236,7 +236,7 @@ class DataExploration:
         lx = value.split(",")
         if lx[DataExploration.get_col_id("PRIMARY_CHECKLIST_FLAG")] == "1" or \
                 (lx[DataExploration.get_col_id("Agelaius_phoeniceus")] != '0' and
-                         lx[DataExploration.get_col_id("Agelaius_phoeniceus")] != '?'):
+                     lx[DataExploration.get_col_id("Agelaius_phoeniceus")] != '?'):
             return True
         else:
             return False
@@ -263,10 +263,10 @@ class DataExploration:
         ca_ls = DataExploration.convert_columns(a_ls)
         rca_ls = DataExploration.replace_columns(ca_ls)
         n_ls = HandleMissing.convert_into_numeric_value(rca_ls,
-                                                        dict= DataExploration.header_dict,
+                                                        dict=DataExploration.header_dict,
                                                         target_index=DataExploration.get_col_id("Agelaius_phoeniceus"),
-                                                        birds_index= DataExploration.birds_column_ids,
-                                                        drop_index= DataExploration.drop_column_ids)
+                                                        birds_index=DataExploration.birds_column_ids,
+                                                        drop_index=DataExploration.drop_column_ids)
         drca_ls = DataExploration.drop_columns(n_ls)
         return drca_ls
 
@@ -280,11 +280,11 @@ class DataExploration:
 
     @staticmethod
     def normalize(record, variance):
-        for i in range(0,len(record)-28):
+        for i in range(0, len(record) - 28):
             if variance[i] != 0.0:
-                record[i] = (record[i] - DataExploration.mean[i])/math.sqrt(DataExploration.variance[i])
+                record[i] = (record[i] - DataExploration.mean[i]) / math.sqrt(DataExploration.variance[i])
         return record
- 
+
     @staticmethod
     def create_header(headers):
         DataExploration.header_dict = DataExploration.create_header_dict(headers)
@@ -305,32 +305,32 @@ class DataExploration:
 
     @staticmethod
     def calculate_corr(irdd):
-        df = irdd.toDF()
+        df = irdd.toDF()  # .replace("?","0").replace("x","2")
         target_bird_id = DataExploration.get_col_id("Agelaius_phoeniceus")
         remaining_bird_ids = np.delete(DataExploration.birds_column_ids, target_bird_id)
         print "All columns"
         print df.columns
         correlation_dict = dict()
         for other_bird_id in remaining_bird_ids:
-            correlation = df.stat.corr('_'+str(target_bird_id), '_'+str(other_bird_id))
+            correlation = df.stat.corr('_' + str(target_bird_id), '_' + str(other_bird_id))
             correlation_dict[(target_bird_id, other_bird_id)] = correlation
-            #print target_bird_id,':',other_bird_id,':',correlation
+            # print target_bird_id,':',other_bird_id,':',correlation
         with open('/Users/Darshan/Documents/MapReduce/FinalProject/correlation.csv', 'w') as csv_file:
             writer = csv.writer(csv_file)
             for key, value in correlation_dict.items():
                 writer.writerow([key, value])
-        #cid1 = 26
-        #cid2 = 20
-        #v1 = df.flatMap(lambda x: Vectors.dense(DataExploration.get_number(x[cid1])))
-        #v2 = df.flatMap(lambda x: Vectors.dense(DataExploration.get_number(x[cid2])))
-        #print Statistics.corr(v1,v2)
+                # cid1 = 26
+                # cid2 = 20
+                # v1 = df.flatMap(lambda x: Vectors.dense(DataExploration.get_number(x[cid1])))
+                # v2 = df.flatMap(lambda x: Vectors.dense(DataExploration.get_number(x[cid2])))
+                # print Statistics.corr(v1,v2)
 
     @staticmethod
     def cal_birds_column_ids():
         bird_index = []
         for key, value in DataExploration.header_dict.items():
             parts = key.split('_')
-            if(len(parts) > 1 and parts[1].islower()):
+            if (len(parts) > 1 and parts[1].islower()):
                 bird_index.append(value)
         DataExploration.birds_column_ids = np.array(bird_index)
 
@@ -356,7 +356,7 @@ class DataExploration:
     def print_information(irdd):
         plist = irdd.take(2)
         print plist
-        #irdd.toDF().show(10)
+        # irdd.toDF().show(10)
         '''
         for l in plist:
             for val in l:
@@ -377,14 +377,13 @@ class DataExploration:
                 else:
                     ones.add(1)
             except ValueError:
-                print 'Exp ************* : ',target
+                print 'Exp ************* : ', target
                 extra.add(1)
         elif target == 'x' or target == 'X':
             missing.add(1)
         else:
             print 'Else ************* : ', target
             extra.add(1)
-
 
     @staticmethod
     def target_analysis(sc, rdd):
@@ -394,42 +393,157 @@ class DataExploration:
         ones = sc.accumulator(0)
         missing = sc.accumulator(0)
         extra = sc.accumulator(0)
-        rdd.foreach(lambda line : DataExploration.count_target_column(line, zeros, ones, missing, extra, total))
+        rdd.foreach(lambda line: DataExploration.count_target_column(line, zeros, ones, missing, extra, total))
 
-        print 'zeros : ',zeros.value
+        print 'zeros : ', zeros.value
         print 'ones : ', ones.value
         print 'missing : ', missing.value
         print 'extra : ', extra.value
         print 'total : ', total.value
 
+import random
+import numpy as np
+
+
+class HandleMissing:
+
+    rem_ids = []
+    target_index = 0
+
+    def __init__(self):
+        self.rem_ids = []
+
     @staticmethod
-    def replicate_data(value, nbr_of_models):
-
-        duplication = []
-        for i in range(nbr_of_models.value):
-            duplication.append((i, value))
-
-        return duplication
+    def convert_target_into_numeric_value(values):
+        try:
+            target_index = HandleMissing.target_index
+            value = values[target_index]
+            if value == 'x':
+                values[target_index] = random.randint(2,10)
+            elif value == '?':
+                values[target_index] = 0.0
+            else:
+                values[target_index] = float(value)
+        except:
+            values[target_index] = 0.0
+        return values
 
     @staticmethod
-    def train_ml_models(full_data):
+    def convert_target_into_binary_value(values):
+        value = values[HandleMissing.target_index]
+        if value == 0.0:
+            values[HandleMissing.target_index] = 0.0
+        else:
+            values[HandleMissing.target_index] = 1.0
+        return values
 
-        full_data
+    @staticmethod
+    def convert_birds_into_numeric_value(values, birds_index):
+        for index in birds_index:
+            if index != HandleMissing.target_index:
+                value = values[index]
+                try:
+                    if value == 'x':
+                        values[index] = float(random.randint(2,10))
+                    elif value == '?':
+                        values[index] = 0.0
+                    else:
+                        values[index] = float(value)
+                except:
+                    values[index] = 0.0
+        return values
 
+    @staticmethod
+    def convert_remaining_into_numeric_value(values, birds_index, drop_index, dict):
+        if len(HandleMissing.rem_ids) == 0:
+            remaining_index = []
+            for ids in dict.values():
+                try:
+                    remaining_index.extend(ids)
+                except TypeError:
+                    remaining_index.append(ids)
+
+            temp_remaining_index = []
+            for id in remaining_index:
+                if id not in birds_index and id not in drop_index:
+                    temp_remaining_index.append(id)
+
+            HandleMissing.rem_ids = temp_remaining_index
+            HandleMissing.rem_ids.sort()
+
+        for index in HandleMissing.rem_ids:
+            try:
+                value = values[index]
+                if value == 'x':
+                    values[index] = float(random.randint(2,10))
+                elif value == '?':
+                    values[index] = 0.0
+                else:
+                    values[index] = float(value)
+            except:
+                values[index] = 0.0
+        return values
+
+    @staticmethod
+    def convert_into_numeric_value(values, dict, target_index, birds_index, drop_index):
+        HandleMissing.target_index = target_index
+        tf_values = HandleMissing.convert_target_into_numeric_value(values)
+        tfb_values = HandleMissing.convert_target_into_binary_value(tf_values)
+        bv_values = HandleMissing.convert_birds_into_numeric_value(tfb_values, birds_index)
+        tv = HandleMissing.convert_remaining_into_numeric_value(bv_values, birds_index, drop_index, dict)
+        return tv
+
+    @staticmethod
+    def get_target_value(values, target_index):
+        target_index = target_index
+        try:
+            value = values[target_index]
+            if value == 'x':
+                return 1.0
+            elif value == '?':
+                return float(0.0)
+            else:
+                if float(value) == 0.0:
+                    return 0.0
+                else:
+                    return 1.0
+        except:
+            return float(random.randint(0,1))
+
+
+class ModelTraining:
+
+    @staticmethod
+    def random_sampling_by_target(values):
+        try:
+            if values[0] == 'x':
+                random_value = random.randint(1, 20)
+                if random_value == 1:
+                    return False
+                return True
+            elif values[0] == '0':
+                random_value = random.randint(1, 10)
+                # Half the data
+                if random_value == 2:
+                    return False
+                else:
+                    return True
+            elif values[0] == '?':
+                if random.randint(0, 1) == 1:
+                    return True
+            else:
+                return True
+        except:
+            return False
 
 if __name__ == "__main__":
 
     dataExploration = DataExploration()
-    '''
-    input_path = "C:\Users\SPS\Documents\eBirdData\\training.bz2"
-    output_path = "../sample"
-    dataExploration.split_input_data(input_path=input_path, output_path=output_path)
-    '''
     args = sys.argv
-    input_path = args[1] # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
+    input_path = args[1]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     val_path = args[2]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
-    model_path = args[3] # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
-    prediction_path = args[4] # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
+    model_path = args[3]  # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
+    prediction_path = args[4]  # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
 
     DataExploration.create_header(
         [u'SAMPLING_EVENT_ID', u'LOC_ID', u'LATITUDE', u'LONGITUDE', u'YEAR', u'MONTH', u'DAY', u'TIME', u'COUNTRY',
@@ -845,74 +959,13 @@ if __name__ == "__main__":
     DataExploration.cal_birds_column_ids()
     DataExploration.cal_drop_column_ids()
 
-    full_dataset = dataExploration.read_sample_training(input_path).persist()
+    full_data_set = dataExploration.read_sample_training(input_path).persist()
 
-    #DataExploration.create_header(full_dataset.first().split(','))
-    #DataExploration.cal_birds_column_ids()
-    #DataExploration.cal_drop_column_ids()
-
-    (train_rdd, val_rdd) = full_dataset.randomSplit([0.8, 0.2], 345)
-    #train_rdd = dataExploration.read_sample_training("/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample/part-00000")
-    val_rdd.saveAsTextFile(val_path)
-
-    # Two models
-    nbr_of_models = dataExploration.sc.broadcast(2)
-
-    processed_train_rdd = (train_rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)). \
-                           map(lambda x: DataExploration.swap_target(x)). \
-                           filter(lambda x: ModelTraining.handle_class_imbalance(x)). \
-                           map(lambda x: DataExploration.custom_function(x))
-                           .flatMap(lambda x : DataExploration.replicate_data(x, nbr_of_models)))
-    processed_train_rdd.groupByKey().mapPartitions()
-    print "Count is : "+ str(processed_train_rdd.count())
-    #srdd = rdd.flatMap(lambda x: DataExploration.custom_function(x))
-    #DataExploration.calculate_corr(srdd)
-
-    model = ModelTraining.train_logistic_regression(processed_train_rdd,)
-    model.save(dataExploration.sc, model_path)
-
-    logistic_model = LogisticRegressionModel.load(dataExploration.sc, model_path)
-
-    #val_rdd = dataExploration.read_sample_training(
-    #    "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample/part-00001")
-
-    processed_val_rdd = val_rdd.filter(lambda x: DataExploration.filter_header(x)). \
+    processed_train_rdd = full_data_set.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)). \
         map(lambda x: DataExploration.swap_target(x)). \
-        map(lambda x: (x[DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]], DataExploration.custom_function(x)))
-    #print processed_val_rdd.collect()[0]
+        filter(lambda x: ModelTraining.random_sampling_by_target(x)). \
+        map(lambda x: DataExploration.custom_function(x))
 
-    ml_model = dataExploration.sc.broadcast(logistic_model)
+    print(Statistics.corr(processed_train_rdd, method="pearson"))
 
-    predictions = processed_val_rdd.map(lambda x: ""+x[0]+","+str(x[1][0])+","+str(ml_model.value.predict(x[1][1:])))
-    predictions.saveAsTextFile(prediction_path)
 
-    #print predictions.collect()
-
-    ModelTraining.cal_accuracy(dataExploration.sc, predictions)
-
-    #evaluator = BinaryClassificationEvaluator()
-    #auroc = evaluator.evaluate(predictions, {evaluator.metricName: "areaUnderROC"})
-
-    #rdd = dataExploration.read_sample_training("/Users/Darshan/Documents/MapReduce/FinalProject/labeled.csv.bz2")
-    #first_row = dataExploration.sc.parallelize(rdd.first())
-    #rdd = rdd.subtract(first_row)
-    #srdd = rdd.map(lambda x: DataExploration.custom_function(x))
-
-    #DataExploration.print_information(srdd)
-    #dataExploration.test_custom_map(rdd)
-    #dataExploration.print_information(rdd)
-    #DataExploration.target_analysis(dataExploration.sc, rdd)
-    '''
-    rdd = dataExploration.read_sample_training("../sample/part-00000")
-    srdd = rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)).\
-        map(lambda x: DataExploration.swap_target(x)).map(lambda x: DataExploration.custom_function(x))
-    print srdd.collect()[0]
-    summary = Statistics.colStats(srdd)
-    mean = summary.mean()
-    variance = summary.variance()
-    print mean[1], "--", variance[1]
-    DataExploration.set_mean(mean)
-    DataExploration.set_variance(variance)
-    mrdd = srdd.map(lambda x: DataExploration.normalize(x))
-    print mrdd.collect()[0]
-    '''
