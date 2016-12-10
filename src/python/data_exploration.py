@@ -906,7 +906,7 @@ if __name__ == "__main__":
     #dataExploration.sparse_test(sampleDS)
 
     full_data_set = dataExploration.read_sample_training(input_path).persist()
-    first_row = full_data_set.first().collect()
+    first_row = full_data_set.first().split(',')
     (train_rdd, val_rdd) = full_data_set.randomSplit([0.8, 0.2], 345)
     dataExploration.perform_distributed_ml(train_rdd, model_path)
 

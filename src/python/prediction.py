@@ -261,6 +261,22 @@ class DataExploration:
         return sparse_vector
 
     @staticmethod
+    def make_test_sparse_vector(drca_ls):
+        index_array = []
+        value_array = []
+        index = 0
+        for val in drca_ls:
+            if index == 0:
+                index += 1
+                continue
+            if val != 0:
+                index_array.append(index)
+                value_array.append(drca_ls[index])
+            index += 1
+        sparse_vector = SparseVector(index, index_array, value_array)
+        return sparse_vector
+
+    @staticmethod
     def catagories(x):
         list = []
         pair = ((DataExploration.get_col_id("BAILEY_ECOREGION"), x[DataExploration.get_col_id("BAILEY_ECOREGION")]), 1)
@@ -294,7 +310,12 @@ class DataExploration:
         else:
             tn_ls = n_ls
         drca_ls = DataExploration.drop_columns(tn_ls)
-        sparse_vector = DataExploration.make_sparse_vector(drca_ls)
+
+        sparse_vector = None
+        if(not is_test):
+            sparse_vector = DataExploration.make_sparse_vector(drca_ls)
+        else:
+            sparse_vector = DataExploration.make_test_sparse_vector(drca_ls)
         return sparse_vector
 
     @staticmethod
@@ -494,15 +515,48 @@ class DataExploration:
         return "" + x[0] + "," + str(x[1].label) + "," + str(prediction)
 
 
+    def test_prediction_through_models(self, test_data_set, model_path):
+
+        models = self.sc.pickleFile(model_path)
+        model_list = models.map(lambda x: x[1]).collect()
+        print "model_list ", model_list
+        print "model_list type : ", type(model_list)
+
+        model_broadcast = self.sc.broadcast(model_list)
+
+        processed_test_data = test_data_set.zipWithIndex().map(lambda x: (x[1], x[0])).\
+            map(lambda x: (x[0], DataExploration.swap_target(x[1]))).\
+            map(lambda x: (x[0], (x[1][DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]],
+                                  DataExploration.custom_function(x[1], True))))
+        #print processed_test_data.first()
+        predictions = processed_test_data.map(lambda x: (x[0],
+                                                         str(x[1][0]) + ',' + str(DataExploration.test_prediction_values(x[1][1], model_broadcast))))
+
+        #print predictions.collect()
+        print predictions.sortBy(lambda x: x[0]).map(lambda x: x[1]).coalesce(1).saveAsTextFile(prediction_path)
+        #return predictions
+
+    @staticmethod
+    def test_prediction_values(x, model_broadcast):
+
+     prob_sum = 0
+     for index, model in enumerate(model_broadcast.value):
+      prob_sum += model.predict(x.toArray().reshape(1, -1))
+
+     prediction = 0
+     if (prob_sum / len(model_broadcast.value)) > 0.5:
+      prediction = 1
+
+     return prediction
+
 if __name__ == "__main__":
 
     dataExploration = DataExploration()
 
     args = sys.argv
-    input_path = args[1] # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
-    val_path = args[2]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
-    model_path = args[3] # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
-    prediction_path = args[4] # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
+    val_path = args[1]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
+    model_path = args[2] # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
+    prediction_path = args[3] # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
 
     DataExploration.create_header(
         [u'SAMPLING_EVENT_ID', u'LOC_ID', u'LATITUDE', u'LONGITUDE', u'YEAR', u'MONTH', u'DAY', u'TIME', u'COUNTRY',
@@ -929,6 +983,6 @@ if __name__ == "__main__":
 
     val_data_set = dataExploration.read_sample_training(val_path).persist()
 
-    dataExploration.val_prediction_through_models(val_data_set, model_path)
+    dataExploration.test_prediction_through_models(val_data_set, model_path)
 
 

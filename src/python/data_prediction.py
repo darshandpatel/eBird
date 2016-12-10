@@ -565,21 +565,23 @@ class DataPrediction:
         model_broadcast = self.sc.broadcast(model_list)
 
         processed_test_data = test_data_set.zipWithIndex().map(lambda x: (x[1], x[0])).\
-                              map(lambda x: (x[0], DataExploration.swap_target(x[1])).
-                              map(lambda x: (x[0], (x[1][DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]],
-                                             DataExploration.custom_function(x[1], True)))))
+            map(lambda x: (x[0], DataExploration.swap_target(x[1]))).\
+            map(lambda x: (x[0], (x[1][DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]],
+                                  DataExploration.custom_function(x[1], True))))
+        #print processed_test_data.first()
+        predictions = processed_test_data.map(lambda x: (x[0],
+                                                         str(x[1][0]) + ',' + str(DataExploration.test_prediction_values(x[1][1], model_broadcast))))
 
-        predictions = processed_test_data.map(lambda x: (x[0], str(x[1][0])+','+
-                                                         str(DataPrediction.test_prediction_values(x[1][1], model_broadcast))))
-        predictions.sortBy(lambda x: x[0]).map(lambda x: x[1]).saveAsTextFile(prediction_path, 1)
-        return predictions
+        #print predictions.collect()
+        print predictions.sortBy(lambda x: x[0]).map(lambda x: x[1]).coalesce(1).saveAsTextFile(prediction_path)
+        #return predictions
 
     @staticmethod
     def test_prediction_values(x, model_broadcast):
 
      prob_sum = 0
      for index, model in enumerate(model_broadcast.value):
-      prob_sum += model.predict(x[1].features.toArray().reshape(1, -1))
+      prob_sum += model.predict(x.toArray().reshape(1, -1))
 
      prediction = 0
      if (prob_sum / len(model_broadcast.value)) > 0.5:
