@@ -1,15 +1,13 @@
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
-import numpy as np
 import math
 import csv
-from handle_missing_value import HandleMissing
-from model_validation import ModelTraining
-import sys
-from pyspark.mllib.regression import LabeledPoint
 from pyspark.mllib.linalg import SparseVector
-
-
+from pyspark.mllib.classification import LogisticRegressionWithLBFGS
+from pyspark.mllib.regression import LabeledPoint
+import sys
+from sklearn import linear_model, ensemble
+from sklearn.neural_network import MLPClassifier
 
 class DataExploration:
 
@@ -424,7 +422,6 @@ class DataExploration:
 
     @staticmethod
     def train_model(train_data):
-        #list(train_data)
         print "Key : " + str(train_data[0])
         labels = []
         features = []
@@ -436,7 +433,6 @@ class DataExploration:
         features = np.array(features)
 
         if int(train_data[0]) == 0:
-            #sps_acc = sps.coo_matrix((rows, cols))
             return ModelTraining.train_sklean_neural_network(labels, features)
         elif int(train_data[0]) == 1:
             return ModelTraining.train_sklean_random_forest(labels, features)
@@ -458,11 +454,11 @@ class DataExploration:
                                filter(lambda x: ModelTraining.handle_class_imbalance(x)). \
                                map(lambda x: DataExploration.custom_function(x, False)))
 
-        print "Actual Count : " + str(processed_train_rdd.count())
+        #print "Actual Count : " + str(processed_train_rdd.count())
 
-        nbr_of_models = self.sc.broadcast(3)
+        nbr_of_models = self.sc.broadcast(4)
         replicated_train_rdd = processed_train_rdd.flatMap(lambda x: DataExploration.replicate_data(x, nbr_of_models))
-        print "Replicated Count : " + str(replicated_train_rdd.count())
+        #print "Replicated Count : " + str(replicated_train_rdd.count())
 
         trained_group_by = replicated_train_rdd.groupByKey()
         models = trained_group_by.zipWithIndex().map(lambda x : (x[1], x[0])).mapValues(lambda x: DataExploration.train_model(x))
@@ -475,6 +471,247 @@ class DataExploration:
 
         models.saveAsPickleFile(model_path)
 
+
+class ModelTraining:
+
+    @staticmethod
+    def handle_class_imbalance(values):
+        try:
+            if values[0] == 'x':
+                return True
+            elif values[0] == '0':
+                random_value = random.randint(1, 4)
+                # Half the data
+                if random_value == 1 or random_value == 2 or random_value == 3:
+                    return True
+                else:
+                    return False
+            elif values[0] == '?':
+                if random.randint(0, 1) == 1:
+                    return True
+            else:
+                # All positive cases
+                return True
+        except:
+            return False
+
+    @staticmethod
+    def parse_input(values):
+        values = [float(x) for x in values]
+        return LabeledPoint(values[0], values[1:])
+
+    @staticmethod
+    def cal_accuracy(sc, result_rdd):
+
+        true_pos = sc.accumulator(0)
+        false_pos = sc.accumulator(0)
+        true_neg = sc.accumulator(0)
+        false_neg = sc.accumulator(0)
+        total = sc.accumulator(0)
+        result_rdd.foreach(lambda line : ModelTraining.validate(line, true_pos, true_neg, false_pos, false_neg, total))
+
+        print 'true_pos : ',true_pos.value
+        print 'true_neg : ' , true_neg.value
+        print 'false_pos : ', false_pos.value
+        print 'false_neg : ', false_neg.value
+        print 'total : ' , total.value
+        print 'accuracy : ', float(true_pos.value+true_neg.value)/total.value
+
+    @staticmethod
+    def validate(line, true_pos, true_neg, false_pos, false_neg, total):
+        parts = line.split(',')
+        total.add(1)
+        if float(parts[1]) == 0:
+            if int(parts[2]) == 0:
+                true_neg.add(1)
+            else:
+                false_pos.add(1)
+        elif float(parts[1]) == 1:
+            if int(parts[2]) == 1:
+                true_pos.add(1)
+            else:
+                false_neg.add(1)
+
+    @staticmethod
+    def train_logistic_regression(train_rdd):
+        # Build Model
+        model = LogisticRegressionWithLBFGS.train(train_rdd, regParam=0.005, regType='l1')
+        return model
+
+    @staticmethod
+    def train_sklean_logistic_regression(labels, features):
+        # Build Model
+        log_reg = linear_model.LogisticRegression(C=1e5)
+        log_reg.fit(X=features, y=labels)
+        return log_reg
+
+    @staticmethod
+    def train_sklean_random_forest(labels, features):
+        # Build Model
+        random_forest = ensemble.RandomForestClassifier(n_estimators=15,
+                                                        max_depth=25,
+                                                        class_weight={1.0: 0.7, 0.0:0.3})
+        random_forest.fit(X=features, y=labels)
+        return random_forest
+
+    @staticmethod
+    def train_sklean_gradient_trees(labels, features):
+        # Build Model
+        random_forest = ensemble.GradientBoostingClassifier(loss= 'deviance',
+                                                            n_estimators=100,
+                                                            max_depth=5,
+                                                            max_features='auto',
+                                                            min_samples_leaf=500,
+                                                            min_samples_split=1000,
+                                                            learning_rate=0.1)
+        random_forest.fit(X=features, y=labels)
+        return random_forest
+
+    @staticmethod
+    def train_sklean_adaboost(labels, features):
+        # Build Model
+        random_forest = ensemble.GradientBoostingClassifier(loss='deviance',
+                                                            n_estimators=100,
+                                                            max_depth=5,
+                                                            max_features='auto',
+                                                            min_samples_leaf=500,
+                                                            min_samples_split=1000,
+                                                            learning_rate=0.1)
+        random_forest.fit(X=features, y=labels)
+        return random_forest
+
+    @staticmethod
+    def train_sklean_adaboost(labels, features):
+        # Build Model
+        adaboost = ensemble.AdaBoostClassifier(n_estimators=100,
+                                               learning_rate=0.9)
+        adaboost.fit(X=features, y=labels)
+        return adaboost
+
+    @staticmethod
+    def train_sklean_neural_network(labels, features):
+        # Build Model
+        neural_network = MLPClassifier(hidden_layer_sizes=(200, 50, 20),
+                                               solver='sgd',
+                                               activation='logistic',
+                                               learning_rate='adaptive')
+        neural_network.fit(X=features, y=labels)
+        return neural_network
+
+
+import random
+import numpy as np
+
+
+class HandleMissing:
+
+    rem_ids = []
+    target_index = 0
+
+    def __init__(self):
+        self.rem_ids = []
+
+    @staticmethod
+    def convert_target_into_numeric_value(values):
+        try:
+            target_index = HandleMissing.target_index
+            value = values[target_index]
+            if value == 'x':
+                values[target_index] = random.randint(2,10)
+            elif value == '?':
+                values[target_index] = 0.0
+            else:
+                values[target_index] = float(value)
+        except:
+            values[target_index] = 0.0
+        return values
+
+    @staticmethod
+    def convert_target_into_binary_value(values):
+        value = values[HandleMissing.target_index]
+        if value == 0.0:
+            values[HandleMissing.target_index] = 0.0
+        else:
+            values[HandleMissing.target_index] = 1.0
+        return values
+
+    @staticmethod
+    def convert_birds_into_numeric_value(values, birds_index):
+        for index in birds_index:
+            if index != HandleMissing.target_index:
+                value = values[index]
+                try:
+                    if value == 'x':
+                        values[index] = float(random.randint(2,10))
+                    elif value == '?':
+                        values[index] = 0.0
+                    else:
+                        values[index] = float(value)
+                except:
+                    values[index] = 0.0
+        return values
+
+    @staticmethod
+    def convert_remaining_into_numeric_value(values, birds_index, drop_index, dict):
+        if len(HandleMissing.rem_ids) == 0:
+            remaining_index = []
+            for ids in dict.values():
+                try:
+                    remaining_index.extend(ids)
+                except TypeError:
+                    remaining_index.append(ids)
+
+            temp_remaining_index = []
+            for id in remaining_index:
+                if id not in birds_index and id not in drop_index:
+                    temp_remaining_index.append(id)
+
+            HandleMissing.rem_ids = temp_remaining_index
+            HandleMissing.rem_ids.sort()
+
+        for index in HandleMissing.rem_ids:
+            try:
+                value = values[index]
+                if value == 'x':
+                    values[index] = float(random.randint(2,10))
+                elif value == '?':
+                    values[index] = 0.0
+                else:
+                    values[index] = float(value)
+            except:
+                values[index] = 0.0
+        return values
+
+    @staticmethod
+    def convert_into_numeric_value(values, dict, birds_index, drop_index):
+        bv_values = HandleMissing.convert_birds_into_numeric_value(values, birds_index)
+        tv = HandleMissing.convert_remaining_into_numeric_value(bv_values, birds_index, drop_index, dict)
+        return tv
+
+    @staticmethod
+    def convert_target_column_into_numeric(values, target_index):
+        HandleMissing.target_index = target_index
+        tf_values = HandleMissing.convert_target_into_numeric_value(values)
+        tfb_values = HandleMissing.convert_target_into_binary_value(tf_values)
+        return tfb_values
+
+    @staticmethod
+    def get_target_value(values, target_index):
+        target_index = target_index
+        try:
+            value = values[target_index]
+            if value == 'x':
+                return 1.0
+            elif value == '?':
+                return float(0.0)
+            else:
+                if float(value) == 0.0:
+                    return 0.0
+                else:
+                    return 1.0
+        except:
+            return float(random.randint(0,1))
+
 if __name__ == "__main__":
 
     dataExploration = DataExploration()
@@ -483,8 +720,8 @@ if __name__ == "__main__":
     input_path = args[1] # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     val_path = args[2]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     model_path = args[3] # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
-    prediction_path = args[4] # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
 
+    full_data_set = dataExploration.read_sample_training(input_path).persist()
 
     DataExploration.create_header(
         [u'SAMPLING_EVENT_ID', u'LOC_ID', u'LATITUDE', u'LONGITUDE', u'YEAR', u'MONTH', u'DAY', u'TIME', u'COUNTRY',
@@ -900,14 +1137,5 @@ if __name__ == "__main__":
     DataExploration.cal_birds_column_ids()
     DataExploration.cal_drop_column_ids()
 
-    #sampleDS = dataExploration.read_sample_training("../sample/").persist()
-    #dataExploration.sparse_test(sampleDS)
-    #dataExploration.find_catagories(sampleDS)
-    #dataExploration.sparse_test(sampleDS)
-
-    full_data_set = dataExploration.read_sample_training(input_path).persist()
-    first_row = full_data_set.first().collect()
     (train_rdd, val_rdd) = full_data_set.randomSplit([0.8, 0.2], 345)
     dataExploration.perform_distributed_ml(train_rdd, model_path)
-
-

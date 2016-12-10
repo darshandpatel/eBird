@@ -82,13 +82,17 @@ class HandleMissing:
         return values
 
     @staticmethod
-    def convert_into_numeric_value(values, dict, target_index, birds_index, drop_index):
+    def convert_into_numeric_value(values, dict, birds_index, drop_index):
+        bv_values = HandleMissing.convert_birds_into_numeric_value(values, birds_index)
+        tv = HandleMissing.convert_remaining_into_numeric_value(bv_values, birds_index, drop_index, dict)
+        return tv
+
+    @staticmethod
+    def convert_target_column_into_numeric(values, target_index):
         HandleMissing.target_index = target_index
         tf_values = HandleMissing.convert_target_into_numeric_value(values)
         tfb_values = HandleMissing.convert_target_into_binary_value(tf_values)
-        bv_values = HandleMissing.convert_birds_into_numeric_value(tfb_values, birds_index)
-        tv = HandleMissing.convert_remaining_into_numeric_value(bv_values, birds_index, drop_index, dict)
-        return tv
+        return tfb_values
 
     @staticmethod
     def get_target_value(values, target_index):

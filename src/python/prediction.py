@@ -1,15 +1,19 @@
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
+from pyspark.mllib.linalg import Vectors
+from pyspark.mllib.stat import Statistics
 import numpy as np
 import math
+import random
 import csv
 from handle_missing_value import HandleMissing
 from model_validation import ModelTraining
+from pyspark.mllib.classification import LogisticRegressionWithLBFGS, LogisticRegressionModel
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
 import sys
 from pyspark.mllib.regression import LabeledPoint
 from pyspark.mllib.linalg import SparseVector
-
-
+import scipy.sparse as sps
 
 class DataExploration:
 
@@ -425,33 +429,19 @@ class DataExploration:
     @staticmethod
     def train_model(train_data):
         #list(train_data)
-        print "Key : " + str(train_data[0])
         labels = []
         features = []
-        for data in train_data[1]:
+        #sps_acc = sps.coo_matrix((rows, cols))
+        for data in train_data:
             labels.append(data.label)
             features.append(data.features.toArray())
-            # sps_acc = sps_acc + sps.coo_matrix((d, (r, c)), shape=(rows, cols))
+            #sps_acc = sps_acc + sps.coo_matrix((d, (r, c)), shape=(rows, cols))
         labels = np.array(labels)
         features = np.array(features)
-
-        if int(train_data[0]) == 0:
-            #sps_acc = sps.coo_matrix((rows, cols))
-            return ModelTraining.train_sklean_neural_network(labels, features)
-        elif int(train_data[0]) == 1:
-            return ModelTraining.train_sklean_random_forest(labels, features)
-        elif int(train_data[0]) == 2:
-            return ModelTraining.train_sklean_gradient_trees(labels, features)
-        elif int(train_data[0]) == 3:
-            return ModelTraining.train_sklean_logistic_regression(labels, features)
-        elif int(train_data[0]) == 4:
-            return ModelTraining.train_sklean_adaboost(labels, features)
-        else:
-            return ModelTraining.train_sklean_logistic_regression(labels, features)
+        return [ModelTraining.train_sklean_logistic_regression(labels, features)]
         #return [1]
 
-
-    def perform_distributed_ml(self, train_rdd, model_path):
+    def perform_distributed_random_forest(self, train_rdd, model_path):
 
         processed_train_rdd = (train_rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)). \
                                map(lambda x: DataExploration.swap_target(x)). \
@@ -459,21 +449,50 @@ class DataExploration:
                                map(lambda x: DataExploration.custom_function(x, False)))
 
         print "Actual Count : " + str(processed_train_rdd.count())
-
-        nbr_of_models = self.sc.broadcast(3)
+        nbr_of_models = self.sc.broadcast(2)
         replicated_train_rdd = processed_train_rdd.flatMap(lambda x: DataExploration.replicate_data(x, nbr_of_models))
         print "Replicated Count : " + str(replicated_train_rdd.count())
-
         trained_group_by = replicated_train_rdd.groupByKey()
-        models = trained_group_by.zipWithIndex().map(lambda x : (x[1], x[0])).mapValues(lambda x: DataExploration.train_model(x))
-        #print "mapvalues : ", trained_group_by.zipWithIndex().mapValues(lambda x:x).collect()
-        #print "models : ", models
-            #.mapValues(DataExploration.train_model)
-        #print "Map Values Count : " + str(models.count())
-        #print "trained_group_by : " + str(trained_group_by.keys().count())
-        #print "Models : ", models.collect()
+        models = trained_group_by.mapValues(DataExploration.train_model)
+        print "Map Values Count : " + str(models.count())
+        print "trained_group_by : " + str(trained_group_by.keys().count())
+        print "Models : ", models.collect()
 
         models.saveAsPickleFile(model_path)
+
+    def val_prediction_through_models(self, val_data_set, model_path):
+
+        models = self.sc.pickleFile(model_path)
+        model_list = models.map(lambda x : x[1]).collect()
+        print "model_list ", model_list
+        print "model_list type : ", type(model_list)
+        print "size : ", len(model_list)
+        print "first element type : ",type(model_list[0])
+
+        model_broadcast = self.sc.broadcast(model_list)
+
+        processed_val_data = (val_data_set.map(lambda x: DataExploration.swap_target(x)).
+                               map(lambda x: (x[DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]],
+                                              DataExploration.custom_function(x, False))))
+
+        predictions = processed_val_data.map(lambda x: DataExploration.val_prediction_values(x, model_broadcast))
+        predictions.saveAsTextFile(prediction_path)
+
+        return processed_val_data
+
+    @staticmethod
+    def val_prediction_values(x, model_broadcast):
+
+        prob_sum = 0
+        for index, model in enumerate(model_broadcast.value):
+            prob_sum += model.predict(x[1].features.toArray().reshape(1,-1))
+
+        prediction = 0
+        if( prob_sum / len(model_broadcast.value)) >= 0.5:
+            prediction = 1
+
+        return "" + x[0] + "," + str(x[1].label) + "," + str(prediction)
+
 
 if __name__ == "__main__":
 
@@ -484,7 +503,6 @@ if __name__ == "__main__":
     val_path = args[2]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     model_path = args[3] # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
     prediction_path = args[4] # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
-
 
     DataExploration.create_header(
         [u'SAMPLING_EVENT_ID', u'LOC_ID', u'LATITUDE', u'LONGITUDE', u'YEAR', u'MONTH', u'DAY', u'TIME', u'COUNTRY',
@@ -905,9 +923,12 @@ if __name__ == "__main__":
     #dataExploration.find_catagories(sampleDS)
     #dataExploration.sparse_test(sampleDS)
 
-    full_data_set = dataExploration.read_sample_training(input_path).persist()
-    first_row = full_data_set.first().collect()
-    (train_rdd, val_rdd) = full_data_set.randomSplit([0.8, 0.2], 345)
-    dataExploration.perform_distributed_ml(train_rdd, model_path)
+    #full_data_set = dataExploration.read_sample_training(input_path).persist()
+    #(train_rdd, val_rdd) = full_data_set.randomSplit([0.8, 0.2], 345)
+    #dataExploration.perform_distributed_random_forest(train_rdd, model_path)
+
+    val_data_set = dataExploration.read_sample_training(val_path).persist()
+
+    dataExploration.val_prediction_through_models(val_data_set, model_path)
 
 
