@@ -15,6 +15,18 @@ from pyspark.mllib.regression import LabeledPoint
 from pyspark.mllib.linalg import SparseVector
 import scipy.sparse as sps
 
+from pyspark import SparkConf, SparkContext
+from pyspark.sql import SQLContext
+import numpy as np
+import math
+import csv
+from handle_missing_value import HandleMissing
+from model_validation import ModelTraining
+import sys
+from pyspark.mllib.regression import LabeledPoint
+from pyspark.mllib.linalg import SparseVector
+import scipy.sparse as sp
+
 class DataExploration:
 
     header_dict = {}
@@ -246,8 +258,28 @@ class DataExploration:
 
     @staticmethod
     def make_sparse_vector(drca_ls):
+        #index_array = []
+        #value_array = []
+        values = []
+        index = 0
+        for val in drca_ls:
+            if index == 0:
+                index += 1
+                continue
+            if val != 0:
+                #index_array.append(index)
+                #value_array.append(drca_ls[index])
+                values.append((index, drca_ls[index]))
+            index+=1
+        #sparse_vector = LabeledPoint(drca_ls[0], SparseVector(index, index_array, value_array))
+        #return sparse_vector
+        return (drca_ls[0], index, values)
+
+    @staticmethod
+    def make_val_sparse_vector(drca_ls):
         index_array = []
         value_array = []
+
         index = 0
         for val in drca_ls:
             if index == 0:
@@ -256,7 +288,7 @@ class DataExploration:
             if val != 0:
                 index_array.append(index)
                 value_array.append(drca_ls[index])
-            index+=1
+            index += 1
         sparse_vector = LabeledPoint(drca_ls[0], SparseVector(index, index_array, value_array))
         return sparse_vector
 
@@ -295,7 +327,7 @@ class DataExploration:
 
 
     @staticmethod
-    def custom_function(ls, is_test):
+    def custom_function(ls, is_val, is_test):
         a_ls = DataExploration.add_columns(ls)
         rca_ls = DataExploration.replace_columns(a_ls)
         n_ls = HandleMissing.convert_into_numeric_value(rca_ls,
@@ -310,12 +342,12 @@ class DataExploration:
         else:
             tn_ls = n_ls
         drca_ls = DataExploration.drop_columns(tn_ls)
-
-        sparse_vector = None
-        if(not is_test):
-            sparse_vector = DataExploration.make_sparse_vector(drca_ls)
-        else:
+        if is_val:
+            sparse_vector = DataExploration.make_val_sparse_vector(drca_ls)
+        elif is_test:
             sparse_vector = DataExploration.make_test_sparse_vector(drca_ls)
+        else:
+            sparse_vector = DataExploration.make_sparse_vector(drca_ls)
         return sparse_vector
 
     @staticmethod
@@ -450,52 +482,87 @@ class DataExploration:
     @staticmethod
     def train_model(train_data):
         #list(train_data)
+        print train_data
+        print "Key : " + str(train_data[0])
         labels = []
         features = []
-        #sps_acc = sps.coo_matrix((rows, cols))
-        for data in train_data:
-            labels.append(data.label)
-            features.append(data.features.toArray())
-            #sps_acc = sps_acc + sps.coo_matrix((d, (r, c)), shape=(rows, cols))
+        rows = []
+        columns = []
+        values = []
+        total_column = 0
+        total_row = 0
+        for data in train_data[1]:
+            labels.append(data[0])
+            total_column = data[1]
+            actual_data = data[2]
+            for column_value in actual_data:
+                column = column_value[0]
+                value = column_value[1]
+                rows.append(total_row)
+                columns.append(column)
+                values.append(value)
+            total_row += 1
+            #labels.append(data.label)
+            #features.append(data.features.toArray())
+            #features.append(data.features)
+            # sps_acc = sps_acc + sps.coo_matrix((d, (r, c)), shape=(rows, cols))
+        features = sp.csc_matrix((values, (rows, columns)), shape=(total_row, total_column))
         labels = np.array(labels)
-        features = np.array(features)
-        return [ModelTraining.train_sklean_logistic_regression(labels, features)]
+        #features = np.array(features)
+
+        if int(train_data[0]) == 0:
+            return ModelTraining.train_sklean_neural_network(labels, features)
+        elif int(train_data[0]) == 1:
+            return ModelTraining.train_sklean_random_forest(labels, features)
+        elif int(train_data[0]) == 2:
+            return ModelTraining.train_sklean_gradient_trees(labels, features)
+        elif int(train_data[0]) == 3:
+            return ModelTraining.train_sklean_logistic_regression(labels, features)
+        elif int(train_data[0]) == 4:
+            return ModelTraining.train_sklean_adaboost(labels, features)
+        else:
+            return ModelTraining.train_sklean_logistic_regression(labels, features)
         #return [1]
 
-    def perform_distributed_random_forest(self, train_rdd, model_path):
+
+    def perform_distributed_ml(self, train_rdd, model_path):
 
         processed_train_rdd = (train_rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)). \
                                map(lambda x: DataExploration.swap_target(x)). \
                                filter(lambda x: ModelTraining.handle_class_imbalance(x)). \
-                               map(lambda x: DataExploration.custom_function(x, False)))
+                               map(lambda x: DataExploration.custom_function(x, False, False)))
 
         print "Actual Count : " + str(processed_train_rdd.count())
-        nbr_of_models = self.sc.broadcast(2)
+
+        nbr_of_models = self.sc.broadcast(3)
         replicated_train_rdd = processed_train_rdd.flatMap(lambda x: DataExploration.replicate_data(x, nbr_of_models))
         print "Replicated Count : " + str(replicated_train_rdd.count())
+        print replicated_train_rdd.first()
         trained_group_by = replicated_train_rdd.groupByKey()
-        models = trained_group_by.mapValues(DataExploration.train_model)
+        print "Unique keys before zip index : ", trained_group_by.keys().count()
+        models = trained_group_by.zipWithIndex().map(lambda x : (x[1], x[0])).mapValues(lambda x: DataExploration.train_model(x))
+        #print "mapvalues : ", trained_group_by.zipWithIndex().mapValues(lambda x:x).collect()
+        #print "models : ", models
+            #.mapValues(DataExploration.train_model)
         print "Map Values Count : " + str(models.count())
-        print "trained_group_by : " + str(trained_group_by.keys().count())
+        #print "trained_group_by : " + str(trained_group_by.keys().count())
         print "Models : ", models.collect()
 
         models.saveAsPickleFile(model_path)
 
-    def val_prediction_through_models(self, val_data_set, model_path):
+    def val_prediction_through_models(self, val_data_set, model_path, prediction_path):
 
         models = self.sc.pickleFile(model_path)
-        model_list = models.map(lambda x : x[1]).collect()
+        model_list = models.map(lambda x: x[1]).collect()
         print "model_list ", model_list
         print "model_list type : ", type(model_list)
-        print "size : ", len(model_list)
-        print "first element type : ",type(model_list[0])
 
         model_broadcast = self.sc.broadcast(model_list)
 
         processed_val_data = (val_data_set.map(lambda x: DataExploration.swap_target(x)).
-                               map(lambda x: (x[DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]],
-                                              DataExploration.custom_function(x, False))))
-
+                              map(lambda x: (x[DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]],
+                                             DataExploration.custom_function(x, True, False))))
+        print processed_val_data.first()
         predictions = processed_val_data.map(lambda x: DataExploration.val_prediction_values(x, model_broadcast))
         predictions.saveAsTextFile(prediction_path)
 
@@ -505,49 +572,15 @@ class DataExploration:
     def val_prediction_values(x, model_broadcast):
 
         prob_sum = 0
-        for index, model in enumerate(model_broadcast.value):
-            prob_sum += model.predict(x[1].features.toArray().reshape(1,-1))
+        for model in model_broadcast.value:
+            #prob_sum += model.predict(x[1].features.toArray().reshape(1, -1))
+            prob_sum += model.predict(x[1].features.toArray().reshape(1, -1))
 
         prediction = 0
-        if( prob_sum / len(model_broadcast.value)) >= 0.5:
+        if(prob_sum/ len(model_broadcast.value)) > 0.5:
             prediction = 1
 
         return "" + x[0] + "," + str(x[1].label) + "," + str(prediction)
-
-
-    def test_prediction_through_models(self, test_data_set, model_path):
-
-        models = self.sc.pickleFile(model_path)
-        model_list = models.map(lambda x: x[1]).collect()
-        print "model_list ", model_list
-        print "model_list type : ", type(model_list)
-
-        model_broadcast = self.sc.broadcast(model_list)
-
-        processed_test_data = test_data_set.zipWithIndex().map(lambda x: (x[1], x[0])).\
-            map(lambda x: (x[0], DataExploration.swap_target(x[1]))).\
-            map(lambda x: (x[0], (x[1][DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]],
-                                  DataExploration.custom_function(x[1], True))))
-        #print processed_test_data.first()
-        predictions = processed_test_data.map(lambda x: (x[0],
-                                                         str(x[1][0]) + ',' + str(DataExploration.test_prediction_values(x[1][1], model_broadcast))))
-
-        #print predictions.collect()
-        print predictions.sortBy(lambda x: x[0]).map(lambda x: x[1]).coalesce(1).saveAsTextFile(prediction_path)
-        #return predictions
-
-    @staticmethod
-    def test_prediction_values(x, model_broadcast):
-
-     prob_sum = 0
-     for index, model in enumerate(model_broadcast.value):
-      prob_sum += model.predict(x.toArray().reshape(1, -1))
-
-     prediction = 0
-     if (prob_sum / len(model_broadcast.value)) > 0.5:
-      prediction = 1
-
-     return prediction
 
 if __name__ == "__main__":
 
@@ -983,6 +1016,7 @@ if __name__ == "__main__":
 
     val_data_set = dataExploration.read_sample_training(val_path).persist()
 
-    dataExploration.test_prediction_through_models(val_data_set, model_path)
+    #dataExploration.test_prediction_through_models(val_data_set, model_path, prediction_path)
+    dataExploration.val_prediction_through_models(val_data_set, model_path, prediction_path)
 
 

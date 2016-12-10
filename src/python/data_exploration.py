@@ -8,8 +8,7 @@ from model_validation import ModelTraining
 import sys
 from pyspark.mllib.regression import LabeledPoint
 from pyspark.mllib.linalg import SparseVector
-
-
+import scipy.sparse as sp
 
 class DataExploration:
 
@@ -242,6 +241,42 @@ class DataExploration:
 
     @staticmethod
     def make_sparse_vector(drca_ls):
+        #index_array = []
+        #value_array = []
+        values = []
+        index = 0
+        for val in drca_ls:
+            if index == 0:
+                index += 1
+                continue
+            if val != 0:
+                #index_array.append(index)
+                #value_array.append(drca_ls[index])
+                values.append((index, drca_ls[index]))
+            index+=1
+        #sparse_vector = LabeledPoint(drca_ls[0], SparseVector(index, index_array, value_array))
+        #return sparse_vector
+        return (drca_ls[0], index, values)
+
+    @staticmethod
+    def make_val_sparse_vector(drca_ls):
+        index_array = []
+        value_array = []
+
+        index = 0
+        for val in drca_ls:
+            if index == 0:
+                index += 1
+                continue
+            if val != 0:
+                index_array.append(index)
+                value_array.append(drca_ls[index])
+            index += 1
+        sparse_vector = LabeledPoint(drca_ls[0], SparseVector(index, index_array, value_array))
+        return sparse_vector
+
+    @staticmethod
+    def make_test_sparse_vector(drca_ls):
         index_array = []
         value_array = []
         index = 0
@@ -252,8 +287,8 @@ class DataExploration:
             if val != 0:
                 index_array.append(index)
                 value_array.append(drca_ls[index])
-            index+=1
-        sparse_vector = LabeledPoint(drca_ls[0], SparseVector(index, index_array, value_array))
+            index += 1
+        sparse_vector = SparseVector(index, index_array, value_array)
         return sparse_vector
 
     @staticmethod
@@ -273,24 +308,29 @@ class DataExploration:
     def find_catagories(rdd):
         print rdd.map(lambda x: x.split(",")).flatMap(lambda x: DataExploration.catagories(x)).groupByKey().keys().collect()
 
-
     @staticmethod
-    def custom_function(ls, is_test):
+    def custom_function(ls, is_val, is_test):
         a_ls = DataExploration.add_columns(ls)
         rca_ls = DataExploration.replace_columns(a_ls)
         n_ls = HandleMissing.convert_into_numeric_value(rca_ls,
-                                                        dict= DataExploration.header_dict,
-                                                        birds_index= DataExploration.birds_column_ids,
-                                                        drop_index= DataExploration.drop_column_ids)
+                                                        dict=DataExploration.header_dict,
+                                                        birds_index=DataExploration.birds_column_ids,
+                                                        drop_index=DataExploration.drop_column_ids)
         tn_ls = None
-        if(not is_test):
+        if (not is_test):
             tn_ls = HandleMissing.convert_target_column_into_numeric(n_ls,
-                                                                    target_index=DataExploration.get_col_id(
-                                                                        "Agelaius_phoeniceus"), )
+                                                                     target_index=DataExploration.get_col_id(
+                                                                         "Agelaius_phoeniceus"), )
         else:
             tn_ls = n_ls
+
         drca_ls = DataExploration.drop_columns(tn_ls)
-        sparse_vector = DataExploration.make_sparse_vector(drca_ls)
+        if is_val:
+            sparse_vector = DataExploration.make_val_sparse_vector(drca_ls)
+        elif is_test:
+            sparse_vector = DataExploration.make_test_sparse_vector(drca_ls)
+        else:
+            sparse_vector = DataExploration.make_sparse_vector(drca_ls)
         return sparse_vector
 
     @staticmethod
@@ -419,59 +459,148 @@ class DataExploration:
     def sparse_test(self, srdd):
         sprdd = srdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x))\
             .map(lambda x: DataExploration.swap_target(x)).\
-            map(lambda x: DataExploration.custom_function(x, False))
+            map(lambda x: DataExploration.custom_function(x, False, False))
         print sprdd.collect()[0]
 
     @staticmethod
-    def train_model(train_data):
+    def train_model(row):
         #list(train_data)
-        print "Key : " + str(train_data[0])
+        #print train_data
+        #print "********* Key : " + str(train_data[0])
+        print ")))))))", row
         labels = []
         features = []
+        rows = []
+        columns = []
+        values = []
+        total_column = 0
+        total_row = 0
+        key = row[0]
+        #key = 0
+        for train_data in row[1]:
+        #for data in train_data[1]:
+            #print train_data
+            #key = train_data[0]
+            label = train_data[0]
+            total_column= train_data[1]
+            actual_data = train_data[2]
+            labels.append(label)
+            for column_value in actual_data:
+                column = column_value[0]
+                value = column_value[1]
+                rows.append(total_row)
+                columns.append(column)
+                values.append(value)
+            total_row += 1
+        '''
         for data in train_data[1]:
-            labels.append(data.label)
-            features.append(data.features.toArray())
+            labels.append(data[0])
+            total_column = data[1]
+            actual_data = data[2]
+            for column_value in actual_data:
+                column = column_value[0]
+                value = column_value[1]
+                rows.append(total_row)
+                columns.append(column)
+                values.append(value)
+            total_row += 1
+        '''
+            #labels.append(data.label)
+            #features.append(data.features.toArray())
+            #features.append(data.features)
             # sps_acc = sps_acc + sps.coo_matrix((d, (r, c)), shape=(rows, cols))
+        print '******************** total_row', total_row
+        features = sp.csc_matrix((values, (rows, columns)), shape=(total_row, total_column))
         labels = np.array(labels)
-        features = np.array(features)
+        #features = np.array(features)
 
-        if int(train_data[0]) == 0:
-            #sps_acc = sps.coo_matrix((rows, cols))
+        if int(key) == 0:
             return ModelTraining.train_sklean_neural_network(labels, features)
-        elif int(train_data[0]) == 1:
+        elif int(key) == 1:
             return ModelTraining.train_sklean_random_forest(labels, features)
-        elif int(train_data[0]) == 2:
+        elif int(key) == 2:
             return ModelTraining.train_sklean_gradient_trees(labels, features)
-        elif int(train_data[0]) == 3:
+        elif int(key) == 3:
             return ModelTraining.train_sklean_logistic_regression(labels, features)
-        elif int(train_data[0]) == 4:
+        elif int(key) == 4:
             return ModelTraining.train_sklean_adaboost(labels, features)
         else:
             return ModelTraining.train_sklean_logistic_regression(labels, features)
         #return [1]
 
+    @staticmethod
+    def train_model_after_group_by(train_data):
+        labels = []
+        rows = []
+        columns = []
+        values = []
+        total_column = 0
+        total_row = 0
+        key = 0
+        #print train_data
+        for data in train_data:
+            #print "data : ",data
+            # for data in train_data[1]:
+            key = data[0]
+            actual_data = data[1]
+            labels.append(actual_data[0])
+            total_column = actual_data[1]
+            feature_values = actual_data[2]
+            for column_value in feature_values:
+                column = column_value[0]
+                value = column_value[1]
+                rows.append(total_row)
+                columns.append(column)
+                values.append(value)
+            total_row += 1
+            # labels.append(data.label)
+            # features.append(data.features.toArray())
+            # features.append(data.features)
+            # sps_acc = sps_acc + sps.coo_matrix((d, (r, c)), shape=(rows, cols))
+        print '******************** total_row', total_row
+        features = sp.csc_matrix((values, (rows, columns)), shape=(total_row, total_column))
+        labels = np.array(labels)
+        # features = np.array(features)
+
+        if int(key) == 0:
+            return ModelTraining.train_sklean_neural_network(labels, features)
+        elif int(key) == 1:
+            return ModelTraining.train_sklean_random_forest(labels, features)
+        elif int(key) == 2:
+            return ModelTraining.train_sklean_gradient_trees(labels, features)
+        elif int(key) == 3:
+            return ModelTraining.train_sklean_logistic_regression(labels, features)
+        elif int(key) == 4:
+            return ModelTraining.train_sklean_adaboost(labels, features)
+        else:
+            return ModelTraining.train_sklean_logistic_regression(labels, features)
+            # return [1]
 
     def perform_distributed_ml(self, train_rdd, model_path):
 
         processed_train_rdd = (train_rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)). \
                                map(lambda x: DataExploration.swap_target(x)). \
                                filter(lambda x: ModelTraining.handle_class_imbalance(x)). \
-                               map(lambda x: DataExploration.custom_function(x, False)))
+                               map(lambda x: DataExploration.custom_function(x, False, False)))
 
         print "Actual Count : " + str(processed_train_rdd.count())
 
         nbr_of_models = self.sc.broadcast(3)
-        replicated_train_rdd = processed_train_rdd.flatMap(lambda x: DataExploration.replicate_data(x, nbr_of_models))
+        replicated_train_rdd = processed_train_rdd.flatMap(lambda x: DataExploration.replicate_data(x, nbr_of_models))#.keyBy(lambda x : x[0])
         print "Replicated Count : " + str(replicated_train_rdd.count())
+        print replicated_train_rdd.first()
+        #print "Data value : ", replicated_train_rdd.first()
+        trained_group_by = replicated_train_rdd.groupBy(lambda x: x[0], numPartitions=3)
+        #trained_group_by.coalesce(3, shuffle=True)
+        models = trained_group_by.mapValues(lambda x: DataExploration.train_model_after_group_by(x))
 
-        trained_group_by = replicated_train_rdd.groupByKey()
-        models = trained_group_by.zipWithIndex().map(lambda x : (x[1], x[0])).mapValues(lambda x: DataExploration.train_model(x))
+        #models = trained_group_by.zipWithIndex().map(lambda x : (x[1], x[0])).mapValues(lambda x: DataExploration.train_model(x))
+
         #print "mapvalues : ", trained_group_by.zipWithIndex().mapValues(lambda x:x).collect()
-        #print "models : ", models
             #.mapValues(DataExploration.train_model)
         #print "Map Values Count : " + str(models.count())
         #print "trained_group_by : " + str(trained_group_by.keys().count())
-        #print "Models : ", models.collect()
+        print "Models : ", models.collect()
 
         models.saveAsPickleFile(model_path)
 

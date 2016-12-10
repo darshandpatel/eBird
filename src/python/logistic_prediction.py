@@ -3,6 +3,613 @@ from handle_missing_value import HandleMissing
 import sys
 from data_exploration import DataExploration
 
+
+from pyspark import SparkConf, SparkContext
+from pyspark.sql import SQLContext
+import numpy as np
+import math
+import csv
+from handle_missing_value import HandleMissing
+from model_validation import ModelTraining
+import sys
+from pyspark.mllib.regression import LabeledPoint
+from pyspark.mllib.linalg import SparseVector
+import scipy.sparse as sp
+
+class DataExploration:
+
+    header_dict = {}
+    drop_list = ["SAMPLING_EVENT_ID", "LOC_ID", "YEAR", "DAY", "COUNTRY", "STATE_PROVINCE", "COUNTY", "COUNT_TYPE", "OBSERVER_ID",
+                 "ELEV_GT","ELEV_NED","GROUP_ID","BAILEY_ECOREGION", "OMERNIK_L3_ECOREGION","SUBNATIONAL2_CODE", "LATITUDE", "LONGITUDE"]
+    drop_multiples_list = ["NLCD", "CAUS_PREC0", "CAUS_PREC1", "CAUS_SNOW0", "CAUS_SNOW1", "CAUS_TEMP_AVG0", "CAUS_TEMP_AVG1"
+                           , "CAUS_TEMP_MIN0", "CAUS_TEMP_MIN1", "CAUS_TEMP_MAX0", "CAUS_TEMP_MAX1"]
+    protocol_list = ["P20", "P21", "P22", "P23", "P34", "P35", "P39", "P40", "P41", "P44", "P45", "P46", "P47", "P48",
+                     "P49", "P50", "P51", "P52", "P55", "P56"]
+    birds_column_ids = None
+    drop_column_ids = []
+    target_ID = 0
+    mean = []
+    variance = []
+
+    def __init__(self):
+        self.conf = SparkConf()
+        self.sc = SparkContext(conf=self.conf)
+        self.sqc = SQLContext(self.sc)
+        self.mrdd = None
+
+    @staticmethod
+    def get_number(n):
+        try:
+            s = float(n)
+            return s
+        except ValueError:
+            #print "Value error in get number:"+n
+            return 0
+
+    @staticmethod
+    def create_header_dict(h):
+        header_dict = {}
+        target_col_name = "Agelaius_phoeniceus"
+        first_col_name = h[0]
+        i = 0
+        for header in h:
+            if header in header_dict:
+                try:
+                    l = len(header_dict[header])
+                    header_dict[header].append(i)
+                except (AttributeError, TypeError) as e:
+                    header_dict[header] = [header_dict[header], i]
+            else:
+                header_dict[header] = i
+            i += 1
+        target_id = header_dict[target_col_name]
+        first_id = header_dict[first_col_name]
+        DataExploration.target_ID = target_id
+        try:
+            l = len(first_id)
+            first_id.append(target_id)
+            swap_id = first_id[0]
+            del first_id[0]
+            header_dict[first_col_name] = first_id
+            header_dict[target_col_name] = swap_id
+        except TypeError:
+            header_dict[target_col_name] = first_id
+            header_dict[first_col_name] = target_id
+        return header_dict
+
+    @staticmethod
+    def get_col_id(s):
+        try:
+            i = DataExploration.header_dict[s]
+            return i
+        except KeyError:
+            print "Key Error in get col id"
+            return -1
+
+    @staticmethod
+    def add_protocol_list(x):
+        protocol = x[DataExploration.get_col_id("COUNT_TYPE")]
+        if protocol == -1:
+            return x
+        for val in DataExploration.protocol_list:
+            if protocol == val:
+                x.append(1.0)
+            else:
+                x.append(0.0)
+        return x
+
+    @staticmethod
+    def add_time_slot(x):
+        time = DataExploration.get_number(x[DataExploration.get_col_id("TIME")])
+        if time == -1:
+            return x
+        if 3 <= time <= 8:
+            x.append(1.0)
+        else:
+            x.append(0.0)
+        if 8 <= time <= 15:
+            x.append(1.0)
+        else:
+            x.append(0.0)
+        if 15 <= time <= 20:
+            x.append(1.0)
+        else:
+            x.append(0.0)
+        if time >= 20 or time <= 3:
+            x.append(1.0)
+        else:
+            x.append(0.0)
+        return x
+
+    @staticmethod
+    def add_elev_avg(x):
+        elev_gt_colID = DataExploration.get_col_id("ELEV_GT")
+        elev_ned_colID = DataExploration.get_col_id("ELEV_NED")
+        if elev_gt_colID == -1 or elev_ned_colID == -1:
+            return x
+        avg = (DataExploration.get_number(x[elev_gt_colID]) +
+               DataExploration.get_number(x[elev_ned_colID]))*1.0/2
+        x.append(avg)
+        return x
+
+    @staticmethod
+    def add_xyz(lx):
+        long_colID = DataExploration.get_col_id("LONGITUDE")
+        latt_colID = DataExploration.get_col_id("LATITUDE")
+        lon = DataExploration.get_number(lx[long_colID])
+        lat = DataExploration.get_number(lx[latt_colID])
+        R = 6371
+        x = R * math.cos(lat) * math.cos(lon)
+        y = R * math.cos(lat) * math.sin(lon)
+        z = R * math.sin(lat)
+        lx.append(x)
+        lx.append(y)
+        lx.append(z)
+        return lx
+
+    @staticmethod
+    def add_columns(x):
+        px = DataExploration.add_protocol_list(x)
+        ptx = DataExploration.add_time_slot(px)
+        ptex = DataExploration.add_elev_avg(ptx)
+        ptelx = DataExploration.add_xyz(ptex)
+        return ptelx
+
+    @staticmethod
+    def replace_caus(x):
+        prec_cid = DataExploration.header_dict["CAUS_PREC"]
+        snow_cid = DataExploration.header_dict["CAUS_SNOW"]
+        tavg_cid = DataExploration.header_dict["CAUS_TEMP_AVG"]
+        tmin_cid = DataExploration.header_dict["CAUS_TEMP_MIN"]
+        tmax_cid = DataExploration.header_dict["CAUS_TEMP_MAX"]
+        month = int(max(1.0,DataExploration.get_number(DataExploration.header_dict["MONTH"])))
+
+        if len(str(month)) == 1:
+            mm = "0"+str(month)
+        else:
+            mm = str(month)
+
+        precmm_cid = DataExploration.header_dict["CAUS_PREC"+mm]
+        try:
+            snowmm_cid = DataExploration.header_dict["CAUS_SNOW"+mm]
+            snowmm = x[snowmm_cid]
+        except KeyError:
+            snowmm = 0
+        tavgmm_cid = DataExploration.header_dict["CAUS_TEMP_AVG"+mm]
+        tminmm_cid = DataExploration.header_dict["CAUS_TEMP_MIN"+mm]
+        tmaxmm_cid = DataExploration.header_dict["CAUS_TEMP_MAX"+mm]
+
+        if x[prec_cid] == "?":
+            x[prec_cid] = x[precmm_cid]
+        if x[snow_cid] == "?":
+            x[snow_cid] = snowmm
+        if x[tavg_cid] == "?":
+            x[tavg_cid] = x[tavgmm_cid]
+        if x[tmin_cid] == "?":
+            x[tmin_cid] = x[tminmm_cid]
+        if x[tmax_cid] == "?":
+            x[tmax_cid] = x[tmaxmm_cid]
+        cx = x
+        return cx
+
+    @staticmethod
+    def replace_columns(ls):
+        cx = DataExploration.replace_caus(ls)
+        return cx
+
+    @staticmethod
+    def drop_columns(ls):
+        col_list = []
+        for col in DataExploration.drop_list:
+            try:
+                l = len(col)
+                col_list.extend(DataExploration.header_dict[col])
+            except TypeError:
+                col_list.append(DataExploration.header_dict[col])
+
+        for col in DataExploration.drop_multiples_list:
+            for key in DataExploration.header_dict:
+                if key.startswith(col):
+                    col_list.append(DataExploration.header_dict[key])
+
+        col_list.sort(reverse=True)
+        for cid in col_list:
+            new_cid = cid
+            del ls[new_cid]
+        return ls
+
+    @staticmethod
+    def filter_value_by_checklist_header(value):
+
+        lx = value.split(",")
+        if lx[DataExploration.get_col_id("PRIMARY_CHECKLIST_FLAG")] == "1" or \
+                (lx[DataExploration.get_col_id("Agelaius_phoeniceus")] != '0' and
+                         lx[DataExploration.get_col_id("Agelaius_phoeniceus")] != '?'):
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def filter_header(value):
+        lx = value.split(",")
+        if lx[DataExploration.get_col_id("PRIMARY_CHECKLIST_FLAG")] != "PRIMARY_CHECKLIST_FLAG":
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def swap_target(line):
+        ls = line.split(",")
+        tmp = ls[0]
+        ls[0] = ls[DataExploration.target_ID]
+        ls[DataExploration.target_ID] = tmp
+        return ls
+
+    @staticmethod
+    def make_sparse_vector(drca_ls):
+        #index_array = []
+        #value_array = []
+        values = []
+        index = 0
+        for val in drca_ls:
+            if index == 0:
+                index += 1
+                continue
+            if val != 0:
+                #index_array.append(index)
+                #value_array.append(drca_ls[index])
+                values.append((index, drca_ls[index]))
+            index+=1
+        #sparse_vector = LabeledPoint(drca_ls[0], SparseVector(index, index_array, value_array))
+        #return sparse_vector
+        return (drca_ls[0], index, values)
+
+    @staticmethod
+    def make_val_sparse_vector(drca_ls):
+        index_array = []
+        value_array = []
+
+        index = 0
+        for val in drca_ls:
+            if index == 0:
+                index += 1
+                continue
+            if val != 0:
+                index_array.append(index)
+                value_array.append(drca_ls[index])
+            index += 1
+        sparse_vector = LabeledPoint(drca_ls[0], SparseVector(index, index_array, value_array))
+        return sparse_vector
+
+    @staticmethod
+    def make_test_sparse_vector(drca_ls):
+        index_array = []
+        value_array = []
+        index = 0
+        for val in drca_ls:
+            if index == 0:
+                index += 1
+                continue
+            if val != 0:
+                index_array.append(index)
+                value_array.append(drca_ls[index])
+            index += 1
+        sparse_vector = SparseVector(index, index_array, value_array)
+        return sparse_vector
+
+    @staticmethod
+    def catagories(x):
+        list = []
+        pair = ((DataExploration.get_col_id("BAILEY_ECOREGION"), x[DataExploration.get_col_id("BAILEY_ECOREGION")]), 1)
+        list.append(pair)
+        pair = ((DataExploration.get_col_id("OMERNIK_L3_ECOREGION"), x[DataExploration.get_col_id("OMERNIK_L3_ECOREGION")]), 1)
+        list.append(pair)
+        pair = ((DataExploration.get_col_id("BCR"), x[DataExploration.get_col_id("BCR")]), 1)
+        list.append(pair)
+        pair = ((DataExploration.get_col_id("YEAR"), x[DataExploration.get_col_id("YEAR")]), 1)
+        list.append(pair)
+        return list
+
+    @staticmethod
+    def find_catagories(rdd):
+        print rdd.map(lambda x: x.split(",")).flatMap(lambda x: DataExploration.catagories(x)).groupByKey().keys().collect()
+
+    @staticmethod
+    def custom_function(ls, is_val, is_test):
+        a_ls = DataExploration.add_columns(ls)
+        rca_ls = DataExploration.replace_columns(a_ls)
+        n_ls = HandleMissing.convert_into_numeric_value(rca_ls,
+                                                        dict=DataExploration.header_dict,
+                                                        birds_index=DataExploration.birds_column_ids,
+                                                        drop_index=DataExploration.drop_column_ids)
+        tn_ls = None
+        if (not is_test):
+            tn_ls = HandleMissing.convert_target_column_into_numeric(n_ls,
+                                                                     target_index=DataExploration.get_col_id(
+                                                                         "Agelaius_phoeniceus"), )
+        else:
+            tn_ls = n_ls
+
+        drca_ls = DataExploration.drop_columns(tn_ls)
+        if is_val:
+            sparse_vector = DataExploration.make_val_sparse_vector(drca_ls)
+        elif is_test:
+            sparse_vector = DataExploration.make_test_sparse_vector(drca_ls)
+        else:
+            sparse_vector = DataExploration.make_sparse_vector(drca_ls)
+        return sparse_vector
+
+    @staticmethod
+    def set_mean(m):
+        DataExploration.mean = m
+
+    @staticmethod
+    def set_variance(v):
+        DataExploration.variance = v
+
+    @staticmethod
+    def normalize(record, variance):
+        for i in range(0,len(record)-28):
+            if variance[i] != 0.0:
+                record[i] = (record[i] - DataExploration.mean[i])/math.sqrt(DataExploration.variance[i])
+        return record
+
+    @staticmethod
+    def create_header(headers):
+        DataExploration.header_dict = DataExploration.create_header_dict(headers)
+
+    def split_input_data(self, input_path, output_path):
+        seed = 17
+        labelled = self.sc.textFile(input_path)
+        headers = labelled.first()
+        DataExploration.header_dict = DataExploration.create_header_dict(headers.split(","))
+        print headers.split(",")
+        modified_labels = labelled.subtract(self.sc.parallelize(headers))
+        train, validate = modified_labels.randomSplit([9, 1], seed)
+        train1, sample = validate.randomSplit([9, 1], seed)
+        sample.saveAsTextFile(output_path)
+
+    def read_sample_training(self, file_path):
+        return self.sc.textFile(file_path)
+
+    @staticmethod
+    def calculate_corr(irdd):
+        df = irdd.toDF()
+        target_bird_id = DataExploration.get_col_id("Agelaius_phoeniceus")
+        remaining_bird_ids = np.delete(DataExploration.birds_column_ids, target_bird_id)
+        print "All columns"
+        print df.columns
+        correlation_dict = dict()
+        for other_bird_id in remaining_bird_ids:
+            correlation = df.stat.corr('_'+str(target_bird_id), '_'+str(other_bird_id))
+            correlation_dict[(target_bird_id, other_bird_id)] = correlation
+            #print target_bird_id,':',other_bird_id,':',correlation
+        with open('/Users/Darshan/Documents/MapReduce/FinalProject/correlation.csv', 'w') as csv_file:
+            writer = csv.writer(csv_file)
+            for key, value in correlation_dict.items():
+                writer.writerow([key, value])
+        #cid1 = 26
+        #cid2 = 20
+        #v1 = df.flatMap(lambda x: Vectors.dense(DataExploration.get_number(x[cid1])))
+        #v2 = df.flatMap(lambda x: Vectors.dense(DataExploration.get_number(x[cid2])))
+        #print Statistics.corr(v1,v2)
+
+    @staticmethod
+    def cal_birds_column_ids():
+        bird_index = []
+        for key, value in DataExploration.header_dict.items():
+            parts = key.split('_')
+            if(len(parts) > 1 and parts[1].islower()):
+                bird_index.append(value)
+        DataExploration.birds_column_ids = np.array(bird_index)
+
+    @staticmethod
+    def cal_drop_column_ids():
+        drop_index = []
+        for col in DataExploration.drop_list:
+            try:
+                l = len(col)
+                drop_index.extend(DataExploration.header_dict[col])
+            except TypeError:
+                drop_index.append(DataExploration.header_dict[col])
+
+        for col in DataExploration.drop_multiples_list:
+            for key in DataExploration.header_dict:
+                if key.startswith(col):
+                    drop_index.append(DataExploration.header_dict[key])
+
+        DataExploration.drop_column_ids = drop_index
+        DataExploration.drop_column_ids.sort()
+
+    @staticmethod
+    def print_information(irdd):
+        plist = irdd.take(2)
+        print plist
+        #irdd.toDF().show(10)
+        '''
+        for l in plist:
+            for val in l:
+                print l
+            print "\n"
+        '''
+
+    @staticmethod
+    def count_target_column(line, zeros, ones, missing, extra, total):
+
+        target = line.split(',')[DataExploration.get_col_id("Agelaius_phoeniceus")]
+        total.add(1)
+        if target != 'x' and target != 'X' and target != '?':
+            try:
+                value = int(target)
+                if value == 0:
+                    zeros.add(1)
+                else:
+                    ones.add(1)
+            except ValueError:
+                print 'Exp ************* : ',target
+                extra.add(1)
+        elif target == 'x' or target == 'X':
+            missing.add(1)
+        else:
+            print 'Else ************* : ', target
+            extra.add(1)
+
+
+    @staticmethod
+    def replicate_data(value, nbr_of_models):
+        duplication = []
+        for i in range(nbr_of_models.value):
+            duplication.append((i, value))
+        return duplication
+
+    def sparse_test(self, srdd):
+        sprdd = srdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x))\
+            .map(lambda x: DataExploration.swap_target(x)).\
+            map(lambda x: DataExploration.custom_function(x, False, False))
+        print sprdd.collect()[0]
+
+    @staticmethod
+    def train_model(row):
+        #list(train_data)
+        #print train_data
+        #print "********* Key : " + str(train_data[0])
+        print ")))))))", row
+        labels = []
+        features = []
+        rows = []
+        columns = []
+        values = []
+        total_column = 0
+        total_row = 0
+        key = row[0]
+        #key = 0
+        for train_data in row[1]:
+        #for data in train_data[1]:
+            #print train_data
+            #key = train_data[0]
+            label = train_data[0]
+            total_column= train_data[1]
+            actual_data = train_data[2]
+            labels.append(label)
+            for column_value in actual_data:
+                column = column_value[0]
+                value = column_value[1]
+                rows.append(total_row)
+                columns.append(column)
+                values.append(value)
+            total_row += 1
+        '''
+        for data in train_data[1]:
+            labels.append(data[0])
+            total_column = data[1]
+            actual_data = data[2]
+            for column_value in actual_data:
+                column = column_value[0]
+                value = column_value[1]
+                rows.append(total_row)
+                columns.append(column)
+                values.append(value)
+            total_row += 1
+        '''
+            #labels.append(data.label)
+            #features.append(data.features.toArray())
+            #features.append(data.features)
+            # sps_acc = sps_acc + sps.coo_matrix((d, (r, c)), shape=(rows, cols))
+        print '******************** total_row', total_row
+        features = sp.csc_matrix((values, (rows, columns)), shape=(total_row, total_column))
+        labels = np.array(labels)
+        #features = np.array(features)
+
+        if int(key) == 0:
+            return ModelTraining.train_sklean_neural_network(labels, features)
+        elif int(key) == 1:
+            return ModelTraining.train_sklean_random_forest(labels, features)
+        elif int(key) == 2:
+            return ModelTraining.train_sklean_gradient_trees(labels, features)
+        elif int(key) == 3:
+            return ModelTraining.train_sklean_logistic_regression(labels, features)
+        elif int(key) == 4:
+            return ModelTraining.train_sklean_adaboost(labels, features)
+        else:
+            return ModelTraining.train_sklean_logistic_regression(labels, features)
+        #return [1]
+
+    @staticmethod
+    def train_model_after_group_by(train_data):
+        labels = []
+        rows = []
+        columns = []
+        values = []
+        total_column = 0
+        total_row = 0
+        key = 0
+        #print train_data
+        for data in train_data:
+            #print "data : ",data
+            # for data in train_data[1]:
+            key = data[0]
+            actual_data = data[1]
+            labels.append(actual_data[0])
+            total_column = actual_data[1]
+            feature_values = actual_data[2]
+            for column_value in feature_values:
+                column = column_value[0]
+                value = column_value[1]
+                rows.append(total_row)
+                columns.append(column)
+                values.append(value)
+            total_row += 1
+            # labels.append(data.label)
+            # features.append(data.features.toArray())
+            # features.append(data.features)
+            # sps_acc = sps_acc + sps.coo_matrix((d, (r, c)), shape=(rows, cols))
+        print '******************** total_row', total_row
+        features = sp.csc_matrix((values, (rows, columns)), shape=(total_row, total_column))
+        labels = np.array(labels)
+        # features = np.array(features)
+
+        if int(key) == 0:
+            return ModelTraining.train_sklean_neural_network(labels, features)
+        elif int(key) == 1:
+            return ModelTraining.train_sklean_random_forest(labels, features)
+        elif int(key) == 2:
+            return ModelTraining.train_sklean_gradient_trees(labels, features)
+        elif int(key) == 3:
+            return ModelTraining.train_sklean_logistic_regression(labels, features)
+        elif int(key) == 4:
+            return ModelTraining.train_sklean_adaboost(labels, features)
+        else:
+            return ModelTraining.train_sklean_logistic_regression(labels, features)
+            # return [1]
+
+    def perform_distributed_ml(self, train_rdd, model_path):
+
+        processed_train_rdd = (train_rdd.filter(lambda x: DataExploration.filter_value_by_checklist_header(x)). \
+                               map(lambda x: DataExploration.swap_target(x)). \
+                               filter(lambda x: ModelTraining.handle_class_imbalance(x)). \
+                               map(lambda x: DataExploration.custom_function(x, False, False)))
+
+        print "Actual Count : " + str(processed_train_rdd.count())
+
+        nbr_of_models = self.sc.broadcast(3)
+        replicated_train_rdd = processed_train_rdd.flatMap(lambda x: DataExploration.replicate_data(x, nbr_of_models))#.keyBy(lambda x : x[0])
+        print "Replicated Count : " + str(replicated_train_rdd.count())
+        print replicated_train_rdd.first()
+        #print "Data value : ", replicated_train_rdd.first()
+        trained_group_by = replicated_train_rdd.groupBy(lambda x: x[0], numPartitions=3)
+        #trained_group_by.coalesce(3, shuffle=True)
+        models = trained_group_by.mapValues(lambda x: DataExploration.train_model_after_group_by(x))
+
+        #models = trained_group_by.zipWithIndex().map(lambda x : (x[1], x[0])).mapValues(lambda x: DataExploration.train_model(x))
+
+        #print "mapvalues : ", trained_group_by.zipWithIndex().mapValues(lambda x:x).collect()
+            #.mapValues(DataExploration.train_model)
+        #print "Map Values Count : " + str(models.count())
+        #print "trained_group_by : " + str(trained_group_by.keys().count())
+        print "Models : ", models.collect()
+
+        models.saveAsPickleFile(model_path)
+
 class DataPrediction:
 
     header_dict = {}
@@ -568,7 +1175,7 @@ class DataPrediction:
         processed_test_data = test_data_set.zipWithIndex().map(lambda x: (x[1], x[0])).\
             map(lambda x: (x[0], DataExploration.swap_target(x[1]))).\
             map(lambda x: (x[0], (x[1][DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]],
-                                  DataExploration.custom_function(x[1], True))))
+                                  DataExploration.custom_function(x[1], False, True))))
         #print processed_test_data.first()
         predictions = processed_test_data.map(lambda x: (x[0],
                                                          str(x[1][0]) + ',' + str(DataPrediction.test_prediction_values(x[1][1], model_broadcast))))
@@ -581,30 +1188,27 @@ class DataPrediction:
 
     @staticmethod
     def test_prediction_values(x, model_broadcast):
+         prob_sum = 0
+         for model in model_broadcast.value:
+             #prob_sum += model.predict(x.toArray().reshape(1, -1))
+             prob_sum += model.predict(x[1])
 
-     prob_sum = 0
-     for model in model_broadcast.value:
-         #prob_sum += model.predict(x.toArray().reshape(1, -1))
-         prob_sum += model.predict(x[1])
-
-     prediction = 0
-     if (prob_sum / len(model_broadcast.value)) > 0.5:
-         prediction = 1
-     return prediction
+         prediction = 0
+         if (prob_sum / len(model_broadcast.value)) > 0.5:
+             prediction = 1
+         return prediction
 
 if __name__ == "__main__":
 
     data_prediction = DataPrediction()
 
     args = sys.argv
-    val_path = args[1] # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     test_path = args[2]  # "/Users/Darshan/Documents/MapReduce/FinalProject/LabeledSample"
     model_path = args[3] # "/Users/Darshan/Documents/MapReduce/FinalProject/Model"
     prediction_path = args[4] # "/Users/Darshan/Documents/MapReduce/FinalProject/Prediction"
 
-    print "validation path : "+val_path
     print "Prediction Path : "+prediction_path
-    val_data_set = data_prediction.read_test_file(val_path).persist()
-    data_prediction.test_prediction_through_models(val_data_set, model_path, prediction_path)
+    test_data_set = data_prediction.read_test_file(test_path).persist()
+    data_prediction.test_prediction_through_models(test_data_set, model_path, prediction_path)
 
 
