@@ -12,34 +12,39 @@ import scipy.sparse as sp
 
 class DataExploration:
 
+    #Column Name - ID mapping
     header_dict = {}
+    #Columns to be dropped
     drop_list = ["SAMPLING_EVENT_ID", "LOC_ID", "YEAR", "DAY", "COUNTRY", "STATE_PROVINCE", "COUNTY", "COUNT_TYPE", "OBSERVER_ID",
                  "ELEV_GT","ELEV_NED","GROUP_ID","BAILEY_ECOREGION", "OMERNIK_L3_ECOREGION","SUBNATIONAL2_CODE", "LATITUDE", "LONGITUDE"]
+    #Columns to be dropped after wild-card search
     drop_multiples_list = ["NLCD", "CAUS_PREC0", "CAUS_PREC1", "CAUS_SNOW0", "CAUS_SNOW1", "CAUS_TEMP_AVG0", "CAUS_TEMP_AVG1"
                            , "CAUS_TEMP_MIN0", "CAUS_TEMP_MIN1", "CAUS_TEMP_MAX0", "CAUS_TEMP_MAX1"]
+    #list of possible protocols for column COUNT_TYPE
     protocol_list = ["P20", "P21", "P22", "P23", "P34", "P35", "P39", "P40", "P41", "P44", "P45", "P46", "P47", "P48",
                      "P49", "P50", "P51", "P52", "P55", "P56"]
+    #List of column IDs of Birds
     birds_column_ids = None
+    #list of column IDs that are dropped
     drop_column_ids = []
     target_ID = 0
-    mean = []
-    variance = []
 
     def __init__(self):
         self.conf = SparkConf()
         self.sc = SparkContext(conf=self.conf)
         self.sqc = SQLContext(self.sc)
-        self.mrdd = None
 
     @staticmethod
     def get_number(n):
+        #converts to number. given value will be String mostly
         try:
             s = float(n)
             return s
         except ValueError:
-            #print "Value error in get number:"+n
+            #It may face error. So return 0 by default.
             return 0
 
+    #computes Column Name - ID mapping
     @staticmethod
     def create_header_dict(h):
         header_dict = {}
@@ -49,16 +54,22 @@ class DataExploration:
         for header in h:
             if header in header_dict:
                 try:
+                    #it will throw error if its not a list.
                     l = len(header_dict[header])
+                    #no error so its a list. So we append it. Ex. LOC_ID
                     header_dict[header].append(i)
                 except (AttributeError, TypeError) as e:
+                    #Error So, Dictionary contains a value but its not a List. So Create a List.
                     header_dict[header] = [header_dict[header], i]
             else:
+                #No key in dictionary so add it.
                 header_dict[header] = i
             i += 1
+        #to swap target bird column with first column for giving as input to ML Algortihm
         target_id = header_dict[target_col_name]
         first_id = header_dict[first_col_name]
         DataExploration.target_ID = target_id
+        #similar error handling mechanism as above to handle list and single elements.
         try:
             l = len(first_id)
             first_id.append(target_id)
@@ -71,20 +82,24 @@ class DataExploration:
             header_dict[first_col_name] = target_id
         return header_dict
 
+    #Given a name of the column, get the ID.
     @staticmethod
     def get_col_id(s):
         try:
             i = DataExploration.header_dict[s]
             return i
         except KeyError:
+            #Error handling. Shouldn't happen
             print "Key Error in get col id"
             return -1
 
+    #One-Hot Encoding for COUNT_TYPE
     @staticmethod
     def add_protocol_list(x):
         protocol = x[DataExploration.get_col_id("COUNT_TYPE")]
         if protocol == -1:
             return x
+        #Append 20 columns
         for val in DataExploration.protocol_list:
             if protocol == val:
                 x.append(1.0)
@@ -92,9 +107,11 @@ class DataExploration:
                 x.append(0.0)
         return x
 
+    #Convert Time into 4 different slots.
     @staticmethod
     def add_time_slot(x):
         time = DataExploration.get_number(x[DataExploration.get_col_id("TIME")])
+        #add 4 columns each for one slot.
         if time == -1:
             return x
         if 3 <= time <= 8:
@@ -115,24 +132,29 @@ class DataExploration:
             x.append(0.0)
         return x
 
+    #Elevation GT,NED : Average it and merge the columns.
     @staticmethod
     def add_elev_avg(x):
         elev_gt_colID = DataExploration.get_col_id("ELEV_GT")
         elev_ned_colID = DataExploration.get_col_id("ELEV_NED")
         if elev_gt_colID == -1 or elev_ned_colID == -1:
             return x
+        #There may still be missing values get_number handles it.
         avg = (DataExploration.get_number(x[elev_gt_colID]) +
                DataExploration.get_number(x[elev_ned_colID]))*1.0/2
         x.append(avg)
         return x
 
+    #Convert WGS-84 coordinates to XYZ plane
     @staticmethod
     def add_xyz(lx):
         long_colID = DataExploration.get_col_id("LONGITUDE")
         latt_colID = DataExploration.get_col_id("LATITUDE")
         lon = DataExploration.get_number(lx[long_colID])
         lat = DataExploration.get_number(lx[latt_colID])
+        #R - radius of earth in KM
         R = 6371
+        #Standard formulae
         x = R * math.cos(lat) * math.cos(lon)
         y = R * math.cos(lat) * math.sin(lon)
         z = R * math.sin(lat)
@@ -141,6 +163,8 @@ class DataExploration:
         lx.append(z)
         return lx
 
+    #Wrapper for adding columns by one-hot encoding
+    #Configurable, we can add or drop anything we need easily
     @staticmethod
     def add_columns(x):
         px = DataExploration.add_protocol_list(x)
@@ -149,6 +173,7 @@ class DataExploration:
         ptelx = DataExploration.add_xyz(ptex)
         return ptelx
 
+    #Missing CAUS features are replaced from extended covariates.
     @staticmethod
     def replace_caus(x):
         prec_cid = DataExploration.header_dict["CAUS_PREC"]
@@ -157,12 +182,12 @@ class DataExploration:
         tmin_cid = DataExploration.header_dict["CAUS_TEMP_MIN"]
         tmax_cid = DataExploration.header_dict["CAUS_TEMP_MAX"]
         month = int(max(1.0,DataExploration.get_number(DataExploration.header_dict["MONTH"])))
-
+        #get month of the current record.
         if len(str(month)) == 1:
             mm = "0"+str(month)
         else:
             mm = str(month)
-
+        #Get values from Extended Covariates using the month.
         precmm_cid = DataExploration.header_dict["CAUS_PREC"+mm]
         try:
             snowmm_cid = DataExploration.header_dict["CAUS_SNOW"+mm]
@@ -172,7 +197,7 @@ class DataExploration:
         tavgmm_cid = DataExploration.header_dict["CAUS_TEMP_AVG"+mm]
         tminmm_cid = DataExploration.header_dict["CAUS_TEMP_MIN"+mm]
         tmaxmm_cid = DataExploration.header_dict["CAUS_TEMP_MAX"+mm]
-
+        #replace if missing
         if x[prec_cid] == "?":
             x[prec_cid] = x[precmm_cid]
         if x[snow_cid] == "?":
@@ -186,26 +211,31 @@ class DataExploration:
         cx = x
         return cx
 
+    #wrapper function for replacing/manipulating columns
     @staticmethod
     def replace_columns(ls):
         cx = DataExploration.replace_caus(ls)
         return cx
 
+    #Drop columns present in Drop_list and multiple_Drop_list.
     @staticmethod
     def drop_columns(ls):
+        #populate the IDS in column List.
         col_list = []
+        #Drop_list columns are dropped.
         for col in DataExploration.drop_list:
             try:
                 l = len(col)
                 col_list.extend(DataExploration.header_dict[col])
             except TypeError:
                 col_list.append(DataExploration.header_dict[col])
-
+        #Wild card search performed and matching columns are dropped.
         for col in DataExploration.drop_multiples_list:
             for key in DataExploration.header_dict:
+                #wild card search
                 if key.startswith(col):
                     col_list.append(DataExploration.header_dict[key])
-
+        #we need to delete from the last to avoid ID overlapping problem.
         col_list.sort(reverse=True)
         for cid in col_list:
             new_cid = cid
@@ -214,7 +244,8 @@ class DataExploration:
 
     @staticmethod
     def filter_value_by_checklist_header(value):
-
+        #filter columns where PRIMIARY_CHECKLIST_FLAG is set to false
+        #Keep it if the target value is 1 or x.
         lx = value.split(",")
         if lx[DataExploration.get_col_id("PRIMARY_CHECKLIST_FLAG")] == "1" or \
                 (lx[DataExploration.get_col_id("Agelaius_phoeniceus")] != '0' and
@@ -223,14 +254,7 @@ class DataExploration:
         else:
             return False
 
-    @staticmethod
-    def filter_header(value):
-        lx = value.split(",")
-        if lx[DataExploration.get_col_id("PRIMARY_CHECKLIST_FLAG")] != "PRIMARY_CHECKLIST_FLAG":
-            return True
-        else:
-            return False
-
+    #swap target column ID with 0, so we can easily mention the Label ID while giving it to ML algorithm
     @staticmethod
     def swap_target(line):
         ls = line.split(",")
@@ -239,30 +263,27 @@ class DataExploration:
         ls[DataExploration.target_ID] = tmp
         return ls
 
+    #for sparse matrix conversion.
     @staticmethod
     def make_sparse_vector(drca_ls):
-        #index_array = []
-        #value_array = []
         values = []
+        #sparse matrix representation. (rowID, list(colID, non-zeroValue))
         index = 0
         for val in drca_ls:
             if index == 0:
                 index += 1
                 continue
             if val != 0:
-                #index_array.append(index)
-                #value_array.append(drca_ls[index])
                 values.append((index, drca_ls[index]))
             index+=1
-        #sparse_vector = LabeledPoint(drca_ls[0], SparseVector(index, index_array, value_array))
-        #return sparse_vector
         return (drca_ls[0], index, values)
 
+    #for sparse Vector conversion.
     @staticmethod
     def make_val_sparse_vector(drca_ls):
         index_array = []
         value_array = []
-
+        #format is (#of columns, list(non-zero IDs), list(non-zero values))
         index = 0
         for val in drca_ls:
             if index == 0:
@@ -291,6 +312,8 @@ class DataExploration:
         sparse_vector = SparseVector(index, index_array, value_array)
         return sparse_vector
 
+    #test code to find number of unique values in each column.
+    #drop if the values are huge.
     @staticmethod
     def catagories(x):
         list = []
@@ -308,22 +331,27 @@ class DataExploration:
     def find_catagories(rdd):
         print rdd.map(lambda x: x.split(",")).flatMap(lambda x: DataExploration.catagories(x)).groupByKey().keys().collect()
 
+    #wrapper function of the whole data cleaning functions.
     @staticmethod
     def custom_function(ls, is_val, is_test):
+        #One-Hot encoding
         a_ls = DataExploration.add_columns(ls)
+        #Manipulate values
         rca_ls = DataExploration.replace_columns(a_ls)
+        #Convert into numeric and target column to binary
         n_ls = HandleMissing.convert_into_numeric_value(rca_ls,
                                                         dict=DataExploration.header_dict,
                                                         birds_index=DataExploration.birds_column_ids,
                                                         drop_index=DataExploration.drop_column_ids)
         tn_ls = None
+        #for testing
         if (not is_test):
             tn_ls = HandleMissing.convert_target_column_into_numeric(n_ls,
                                                                      target_index=DataExploration.get_col_id(
                                                                          "Agelaius_phoeniceus"), )
         else:
             tn_ls = n_ls
-
+        #drop columns
         drca_ls = DataExploration.drop_columns(tn_ls)
         if is_val:
             sparse_vector = DataExploration.make_val_sparse_vector(drca_ls)
@@ -333,26 +361,13 @@ class DataExploration:
             sparse_vector = DataExploration.make_sparse_vector(drca_ls)
         return sparse_vector
 
-    @staticmethod
-    def set_mean(m):
-        DataExploration.mean = m
-
-    @staticmethod
-    def set_variance(v):
-        DataExploration.variance = v
-
-    @staticmethod
-    def normalize(record, variance):
-        for i in range(0,len(record)-28):
-            if variance[i] != 0.0:
-                record[i] = (record[i] - DataExploration.mean[i])/math.sqrt(DataExploration.variance[i])
-        return record
-
+    #create Column Name-ID mapping
     @staticmethod
     def create_header(headers):
         DataExploration.header_dict = DataExploration.create_header_dict(headers)
 
     def split_input_data(self, input_path, output_path):
+        #splits the input data with seed to provide pseudo-randomness.
         seed = 17
         labelled = self.sc.textFile(input_path)
         headers = labelled.first()
@@ -363,9 +378,11 @@ class DataExploration:
         train1, sample = validate.randomSplit([9, 1], seed)
         sample.saveAsTextFile(output_path)
 
+    #wrapper to read function.
     def read_sample_training(self, file_path):
         return self.sc.textFile(file_path)
 
+    #calculating correlation to decide feature importance.
     @staticmethod
     def calculate_corr(irdd):
         df = irdd.toDF()
@@ -388,6 +405,7 @@ class DataExploration:
         #v2 = df.flatMap(lambda x: Vectors.dense(DataExploration.get_number(x[cid2])))
         #print Statistics.corr(v1,v2)
 
+    #populate the list of IDs belongs to Bird data
     @staticmethod
     def cal_birds_column_ids():
         bird_index = []
@@ -397,6 +415,7 @@ class DataExploration:
                 bird_index.append(value)
         DataExploration.birds_column_ids = np.array(bird_index)
 
+    #populate teh list of columns that are dropped.
     @staticmethod
     def cal_drop_column_ids():
         drop_index = []
@@ -414,40 +433,6 @@ class DataExploration:
 
         DataExploration.drop_column_ids = drop_index
         DataExploration.drop_column_ids.sort()
-
-    @staticmethod
-    def print_information(irdd):
-        plist = irdd.take(2)
-        print plist
-        #irdd.toDF().show(10)
-        '''
-        for l in plist:
-            for val in l:
-                print l
-            print "\n"
-        '''
-
-    @staticmethod
-    def count_target_column(line, zeros, ones, missing, extra, total):
-
-        target = line.split(',')[DataExploration.get_col_id("Agelaius_phoeniceus")]
-        total.add(1)
-        if target != 'x' and target != 'X' and target != '?':
-            try:
-                value = int(target)
-                if value == 0:
-                    zeros.add(1)
-                else:
-                    ones.add(1)
-            except ValueError:
-                print 'Exp ************* : ',target
-                extra.add(1)
-        elif target == 'x' or target == 'X':
-            missing.add(1)
-        else:
-            print 'Else ************* : ', target
-            extra.add(1)
-
 
     @staticmethod
     def replicate_data(value, nbr_of_models):

@@ -34,6 +34,7 @@ class ModelTraining:
         values = [float(x) for x in values]
         return LabeledPoint(values[0], values[1:])
 
+    #test function to calculate accuracy
     @staticmethod
     def cal_accuracy(sc, result_rdd):
 
@@ -51,6 +52,7 @@ class ModelTraining:
         print 'total : ' , total.value
         print 'accuracy : ', float(true_pos.value+true_neg.value)/total.value
 
+    #count TP, TN, FP, FN
     @staticmethod
     def validate(line, true_pos, true_neg, false_pos, false_neg, total):
         parts = line.split(',')
