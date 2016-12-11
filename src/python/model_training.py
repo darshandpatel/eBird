@@ -1,10 +1,10 @@
 import random
-from pyspark.mllib.classification import LogisticRegressionWithLBFGS, LogisticRegressionModel
+from pyspark.mllib.classification import LogisticRegressionWithLBFGS
 from pyspark.mllib.regression import LabeledPoint
 from pyspark import SparkConf, SparkContext
 import sys
-from pyspark.mllib.tree import RandomForest, RandomForestModel
-
+from sklearn import linear_model, ensemble
+from sklearn.neural_network import MLPClassifier
 
 class ModelTraining:
 
@@ -75,12 +75,65 @@ class ModelTraining:
         return model
 
     @staticmethod
-    def train_random_forest(train_rdd):
-        parsed_train_rdd = train_rdd.map(ModelTraining.parse_input)
-        model = RandomForest.trainClassifier(parsed_train_rdd, numClasses=2, categoricalFeaturesInfo={},
-                                             numTrees=8, featureSubsetStrategy="auto",
-                                             impurity='gini', maxDepth=15, maxBins=32)
-        return model
+    def train_sklean_logistic_regression(labels, features):
+        # Build Model
+        log_reg = linear_model.LogisticRegression(C=1e5)
+        log_reg.fit(X=features, y=labels)
+        return log_reg
+
+    @staticmethod
+    def train_sklean_random_forest(labels, features):
+        # Build Model
+        random_forest = ensemble.RandomForestClassifier(n_estimators=15,
+                                                        max_depth=25,
+                                                        class_weight={1.0: 0.7, 0.0:0.3})
+        random_forest.fit(X=features, y=labels)
+        return random_forest
+
+    @staticmethod
+    def train_sklean_gradient_trees(labels, features):
+        # Build Model
+        random_forest = ensemble.GradientBoostingClassifier(loss= 'deviance',
+                                                            n_estimators=100,
+                                                            max_depth=5,
+                                                            max_features='auto',
+                                                            min_samples_leaf=500,
+                                                            min_samples_split=1000,
+                                                            learning_rate=0.1)
+        random_forest.fit(X=features, y=labels)
+        return random_forest
+
+    @staticmethod
+    def train_sklean_adaboost(labels, features):
+        # Build Model
+        random_forest = ensemble.GradientBoostingClassifier(loss='deviance',
+                                                            n_estimators=100,
+                                                            max_depth=5,
+                                                            max_features='auto',
+                                                            min_samples_leaf=500,
+                                                            min_samples_split=1000,
+                                                            learning_rate=0.1)
+        random_forest.fit(X=features, y=labels)
+        return random_forest
+
+    @staticmethod
+    def train_sklean_adaboost(labels, features):
+        # Build Model
+        adaboost = ensemble.AdaBoostClassifier(n_estimators=100,
+                                               learning_rate=0.9)
+        adaboost.fit(X=features, y=labels)
+        return adaboost
+
+    @staticmethod
+    def train_sklean_neural_network(labels, features):
+        # Build Model
+        neural_network = MLPClassifier(hidden_layer_sizes=(200, 50, 20),
+                                               solver='sgd',
+                                               activation='logistic',
+                                               learning_rate='adaptive')
+        neural_network.fit(X=features, y=labels)
+        return neural_network
+
 
 if __name__ == "__main__":
 

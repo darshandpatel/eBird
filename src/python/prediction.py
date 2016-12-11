@@ -7,7 +7,7 @@ import math
 import random
 import csv
 from handle_missing_value import HandleMissing
-from model_validation import ModelTraining
+from model_training import ModelTraining
 from pyspark.mllib.classification import LogisticRegressionWithLBFGS, LogisticRegressionModel
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
 import sys
@@ -21,7 +21,7 @@ import numpy as np
 import math
 import csv
 from handle_missing_value import HandleMissing
-from model_validation import ModelTraining
+from model_training import ModelTraining
 import sys
 from pyspark.mllib.regression import LabeledPoint
 from pyspark.mllib.linalg import SparseVector
