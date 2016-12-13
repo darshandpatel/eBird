@@ -1,5 +1,6 @@
 import random
 from pyspark.mllib.classification import LogisticRegressionWithLBFGS
+from pyspark.mllib.tree import RandomForest
 from pyspark.mllib.regression import LabeledPoint
 from pyspark import SparkConf, SparkContext
 import sys
@@ -8,6 +9,7 @@ from sklearn.neural_network import MLPClassifier
 
 class ModelTraining:
 
+    # Handle Class imbalance
     @staticmethod
     def handle_class_imbalance(values):
         try:
@@ -34,7 +36,7 @@ class ModelTraining:
         values = [float(x) for x in values]
         return LabeledPoint(values[0], values[1:])
 
-    #test function to calculate accuracy
+    #Test function to calculate accuracy
     @staticmethod
     def cal_accuracy(sc, result_rdd):
 
@@ -72,6 +74,14 @@ class ModelTraining:
     def train_logistic_regression(train_rdd):
         # Build Model
         model = LogisticRegressionWithLBFGS.train(train_rdd, regParam=0.005, regType='l1')
+        return model
+
+    @staticmethod
+    def train_random_forest(train_rdd):
+        # Build Model
+        model = RandomForest.trainClassifier(train_rdd, numClasses=2, categoricalFeaturesInfo={},
+                                             numTrees=15, featureSubsetStrategy="auto",
+                                             impurity='gini', maxDepth=9, maxBins=32, seed=42)
         return model
 
     @staticmethod

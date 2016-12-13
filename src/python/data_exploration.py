@@ -254,6 +254,14 @@ class DataExploration:
         else:
             return False
 
+    @staticmethod
+    def filter_header(value, header_dict):
+        # Filter first header row
+        if value[header_dict["PRIMARY_CHECKLIST_FLAG"]] != "PRIMARY_CHECKLIST_FLAG":
+            return True
+        else:
+            return False
+
     #swap target column ID with 0, so we can easily mention the Label ID while giving it to ML algorithm
     @staticmethod
     def swap_target(line, target_id):

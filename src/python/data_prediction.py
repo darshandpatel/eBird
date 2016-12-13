@@ -28,7 +28,8 @@ class DataPrediction:
         return self.sc.textFile(file_path)
 
     # Validation (Scikit Learn)
-    def val_prediction_through_models(self, val_data_set, model_path, prediction_path):
+    def val_prediction_through_models(self, val_data_set, model_path, prediction_path,
+                                      header_dict, birds_columns, drop_index):
 
         models = self.sc.pickleFile(model_path)
         model_list = models.map(lambda x: x[1]).collect()
@@ -37,9 +38,9 @@ class DataPrediction:
 
         model_broadcast = self.sc.broadcast(model_list)
 
-        processed_val_data = (val_data_set.map(lambda x: DataExploration.swap_target(x)).
-                              map(lambda x: (x[DataExploration.get_col_id("SAMPLING_EVENT_ID")[0]],
-                                             DataExploration.custom_function(x, False))))
+        processed_val_data = (val_data_set.map(lambda x: DataExploration.swap_target(x, header_dict["Agelaius_phoeniceus"])).
+                              map(lambda x: (x[header_dict("SAMPLING_EVENT_ID")[0]],
+                                             DataExploration.custom_function(x, False, True, header_dict, birds_columns, drop_index))))
 
         predictions = processed_val_data.map(lambda x: DataPrediction.val_prediction_values(x, model_broadcast))
         predictions.saveAsTextFile(prediction_path)
@@ -79,10 +80,9 @@ class DataPrediction:
 
     @staticmethod
     def val_lr_prediction_values(x, model):
+        prediction = 0
         if model.value.predict(x) > 0.5:
-            return 1
-        else:
-            return 0
+            prediction = 1
         return "" + x[0] + "," + str(x[1].label) + "," + str(prediction)
 
     # Prediction on Test Data set (Scikit Learn)
@@ -120,8 +120,9 @@ class DataPrediction:
         model_broadcast = self.sc.broadcast(model)
 
         processed_test_data = test_data_set.zipWithIndex().map(lambda x: (x[1], x[0])). \
-         map(lambda x: (x[0], DataExploration.swap_target(x[1], header_dict["Agelaius_phoeniceus"]))). \
-         map(lambda x: (x[0], (x[1][header_dict["SAMPLING_EVENT_ID"][0]],
+         map(lambda x: (x[0], DataExploration.swap_target(x[1], header_dict["Agelaius_phoeniceus"]))).\
+            filter(lambda x : DataExploration.filter_header(x[1], header_dict)).\
+            map(lambda x: (x[0], (x[1][header_dict["SAMPLING_EVENT_ID"][0]],
                                DataExploration.custom_function(x[1], False, True, header_dict, birds_columns,
                                                                drop_index))))
 
@@ -159,20 +160,17 @@ if __name__ == "__main__":
 
     data_prediction = DataPrediction()
     parser = argparse.ArgumentParser(description='Process validation and test inputs')
-    val = ""
-    parser.add_argument('--valFile', default="")#, help='Run validation on input data', nargs=1, dest=val)
-    parser.add_argument('--testFile', default="")
-    parser.add_argument('--modelFile', default="")
-    parser.add_argument('--resultFile', default="")
 
-    args = sys.argv
+    parser.add_argument('testFile', default="")
+    parser.add_argument('modelFile')
+    parser.add_argument('resultFile')
+
     args = parser.parse_args()
+    print args
     input_file = None
 
-    if args.valFile == "":
-        input_file = args.testFile
-    else:
-        input_file = args.valFile
+
+    input_file = args.testFile
 
     model_path = args.modelFile
     prediction_path = args.resultFile
@@ -592,9 +590,6 @@ if __name__ == "__main__":
     birds_columns = DataExploration.cal_birds_column_ids(header_dict)
     drop_index = DataExploration.cal_drop_column_ids(header_dict)
 
-    if args.testFile == "":
-        data_prediction.val_prediction_through_models(data_set, model_path, prediction_path)
-    else:
-        data_prediction.test_lr_prediction_through_models(data_set, model_path, prediction_path,
+    data_prediction.test_lr_prediction_through_models(data_set, model_path, prediction_path,
                                                    header_dict, birds_columns, drop_index)
     data_prediction.sc.stop()
